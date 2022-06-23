@@ -157,6 +157,7 @@ release-prep:
 	@cp config/example.yaml release_deps/config.yaml
 	@cp config/logging.yaml release_deps/logging.yaml
 	@cp service/com.observiq.collector.plist release_deps/com.observiq.collector.plist
+	@jq ".files[] | select(.service != null)" windows/wix.json >> release_deps/windows_service.json
 
 # Build, sign, and release
 .PHONY: release
