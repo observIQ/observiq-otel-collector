@@ -33,8 +33,10 @@ jobs:
           args: build --single-target --skip-validate --rm-dist
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Copy Windows Binary
+      - name: Copy Windows Collector Binary
         run: cp dist/collector_windows_amd64_v1/observiq-otel-collector.exe windows/observiq-otel-collector.exe
+      - name: Copy Windows Updater Binary
+        run: cp dist/updater_windows_amd64_v1/updater.exe windows/updater.exe
       - name: Copy Plugins to MSI Build Directory
         run: cp -r release_deps/plugins windows/
       - name: Copy Example Config

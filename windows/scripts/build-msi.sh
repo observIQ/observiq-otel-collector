@@ -22,6 +22,7 @@ mkdir -p storage
 touch storage/.include
 
 cp "$PROJECT_BASE/dist/collector_windows_amd64.exe" "observiq-otel-collector.exe"
+cp "$PROJECT_BASE/dist/updater_windows_amd64.exe" "updater.exe"
 
 vagrant winrm -c \
     "cd C:/vagrant; go-msi.exe make -m observiq-otel-collector.msi --version v0.0.1 --arch amd64"

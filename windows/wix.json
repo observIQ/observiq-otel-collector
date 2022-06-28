@@ -19,6 +19,9 @@
       }
     },
     {
+      "path": "updater.exe"
+    },
+    {
       "path": "config.yaml",
       "never_overwrite": true
     },
