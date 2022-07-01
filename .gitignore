@@ -10,7 +10,7 @@ cosign.*
 gpg.*
 *.msi
 *.exe
-*.zip
+windows/*.zip
 windows/**/wix.dynamic.json
 windows/**/wix
 windows/config.yaml

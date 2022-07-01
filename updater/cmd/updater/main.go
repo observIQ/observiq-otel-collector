@@ -16,14 +16,20 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"os"
 
+	"github.com/observiq/observiq-otel-collector/updater/internal/download"
 	"github.com/observiq/observiq-otel-collector/updater/internal/version"
 	"github.com/spf13/pflag"
 )
 
 // Unimplemented
 func main() {
-	var showVersion = pflag.BoolP("version", "v", false, "prints the version of the collector")
+	var showVersion = pflag.BoolP("version", "v", false, "Prints the version of the collector and exits, if specified.")
+	var downloadURL = pflag.String("url", "", "URL to download the update archive from.")
+	var tmpDir = pflag.String("tmpdir", "", "Temporary directory for artifacts. Parent of the 'rollback' directory.")
+	var contentHash = pflag.String("content-hash", "", "Hex encoded hash of the content at the specified URL.")
 	pflag.Parse()
 
 	if *showVersion {
@@ -32,4 +38,27 @@ func main() {
 		fmt.Println("built at:", version.Date())
 		return
 	}
+
+	if *downloadURL == "" {
+		log.Println("The --url flag must be specified!")
+		pflag.PrintDefaults()
+		os.Exit(1)
+	}
+
+	if *tmpDir == "" {
+		log.Println("The --tmpdir flag must be specified!")
+		pflag.PrintDefaults()
+		os.Exit(1)
+	}
+
+	if *contentHash == "" {
+		log.Println("The --content-hash flag must be specified!")
+		pflag.PrintDefaults()
+		os.Exit(1)
+	}
+
+	if err := download.FetchAndExtractArchive(*downloadURL, *tmpDir, *contentHash); err != nil {
+		log.Fatalf("Failed to download and verify update: %s", err)
+	}
+
 }
