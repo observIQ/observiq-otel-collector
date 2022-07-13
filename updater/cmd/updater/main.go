@@ -20,6 +20,7 @@ import (
 	"os"
 
 	"github.com/observiq/observiq-otel-collector/updater/internal/download"
+	"github.com/observiq/observiq-otel-collector/updater/internal/install"
 	"github.com/observiq/observiq-otel-collector/updater/internal/version"
 	"github.com/spf13/pflag"
 )
@@ -61,4 +62,12 @@ func main() {
 		log.Fatalf("Failed to download and verify update: %s", err)
 	}
 
+	installer, err := install.NewInstaller(*tmpDir)
+	if err != nil {
+		log.Fatalf("Failed to create installer: %s", err)
+	}
+
+	if err := installer.Install(); err != nil {
+		log.Fatalf("Failed to install: %s", err)
+	}
 }

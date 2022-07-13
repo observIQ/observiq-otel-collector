@@ -10,6 +10,8 @@ OUTDIR=./dist
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 
+INTEGRATION_TEST_ARGS?=-tags integration
+
 ifeq ($(GOOS), windows)
 EXT?=.exe
 else
@@ -109,6 +111,10 @@ test-with-cover:
 	$(MAKE) for-all CMD="go test -coverprofile=cover.out ./..."
 	$(MAKE) for-all CMD="go tool cover -html=cover.out -o cover.html"
 
+.PHONY: test-updater-integration 
+test-updater-integration:
+	cd updater; go test $(INTEGRATION_TEST_ARGS) -race ./...
+
 .PHONY: bench
 bench:
 	$(MAKE) for-all CMD="go test -benchmem -run=^$$ -bench ^* ./..."
@@ -128,7 +134,8 @@ tidy:
 .PHONY: gosec
 gosec:
 	gosec -exclude-dir updater  ./...
-	cd updater; gosec ./...
+# exclude the testdata dir; it contains a go program for testing.
+	cd updater; gosec -exclude-dir internal/install/testdata ./...
 
 # This target performs all checks that CI will do (excluding the build itself)
 .PHONY: ci-checks
