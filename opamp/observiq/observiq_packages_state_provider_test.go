@@ -318,7 +318,7 @@ func TestLastReportedStatuses(t *testing.T) {
 		{
 			desc: "Bad yaml file",
 			testFunc: func(t *testing.T) {
-				badYaml := "../testdata/package_statuses_bad.yaml"
+				badYaml := "testdata/package_statuses_bad.yaml"
 				logger := zap.NewNop()
 				p := &packagesStateProvider{
 					logger:   logger,
@@ -343,7 +343,7 @@ func TestLastReportedStatuses(t *testing.T) {
 		{
 			desc: "Good yaml file",
 			testFunc: func(t *testing.T) {
-				badYaml := "../testdata/package_statuses_good.yaml"
+				badYaml := "testdata/package_statuses_good.yaml"
 				pkgName := "package"
 				agentVersion := "1.0"
 				agentHash := []byte("hash1")

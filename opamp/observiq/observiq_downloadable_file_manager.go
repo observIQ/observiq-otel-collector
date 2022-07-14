@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package download
+package observiq
 
 import (
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -28,9 +27,61 @@ import (
 	"path/filepath"
 
 	archiver "github.com/mholt/archiver/v3"
+	"github.com/observiq/observiq-otel-collector/opamp"
+	"github.com/open-telemetry/opamp-go/protobufs"
+	"go.uber.org/zap"
 )
 
 const extractFolder = "latest"
+
+// Ensure interface is satisfied
+var _ opamp.DownloadableFileManager = (*DownloadableFileManager)(nil)
+
+// DownloadableFileManager handles DownloadableFile's from a PackagesAvailable message
+type DownloadableFileManager struct {
+	tmpPath string
+	logger  *zap.Logger
+}
+
+// newDownloadableFileManager creates a new OpAmp DownloadableFileManager
+func newDownloadableFileManager(logger *zap.Logger, tmpPath string) *DownloadableFileManager {
+	return &DownloadableFileManager{
+		tmpPath: filepath.Clean(tmpPath),
+		logger:  logger,
+	}
+}
+
+// FetchAndExtractArchive fetches the archive at the specified URL, placing it into dir.
+// It then checks to see if it matches the "expectedHash", a hex-encoded string representing the expected sha256 sum of the file.
+// If it matches, the archive is extracted into the $dir/latest directory.
+// If the archive cannot be extracted, downloaded, or verified, then an error is returned.
+func (m DownloadableFileManager) FetchAndExtractArchive(file *protobufs.DownloadableFile) error {
+	archiveFilePath, err := getOutputFilePath(m.tmpPath, file.GetDownloadUrl())
+	if err != nil {
+		return fmt.Errorf("failed to determine archive download path: %w", err)
+	}
+
+	if err := downloadFile(file.GetDownloadUrl(), archiveFilePath); err != nil {
+		return fmt.Errorf("failed to download file: %w", err)
+	}
+
+	extractPath := filepath.Join(m.tmpPath, extractFolder)
+
+	if err := verifyContentHash(archiveFilePath, file.GetContentHash()); err != nil {
+		return fmt.Errorf("content hash could not be verified: %w", err)
+	}
+
+	// Clean the "latest" dir before extraction
+	if err := os.RemoveAll(extractPath); err != nil {
+		return fmt.Errorf("error cleaning archive extraction target path: %w", err)
+	}
+
+	if err := archiver.Unarchive(archiveFilePath, extractPath); err != nil {
+		return fmt.Errorf("failed to extract file: %w", err)
+	}
+
+	return nil
+}
 
 // Downloads the file into the outPath, truncating the file if it already exists
 func downloadFile(downloadURL string, outPath string) error {
@@ -78,12 +129,7 @@ func getOutputFilePath(basePath, downloadURL string) (string, error) {
 	return filepath.Join(basePath, filepath.Base(url.Path)), nil
 }
 
-func verifyContentHash(contentPath, hexExpectedContentHash string) error {
-	expectedContentHash, err := hex.DecodeString(hexExpectedContentHash)
-	if err != nil {
-		return fmt.Errorf("failed to decode content hash: %w", err)
-	}
-
+func verifyContentHash(contentPath string, expectedFileHash []byte) error {
 	// Hash file at contentPath using sha256
 	fileHash := sha256.New()
 	contentPathClean := filepath.Clean(contentPath)
@@ -104,40 +150,8 @@ func verifyContentHash(contentPath, hexExpectedContentHash string) error {
 	}
 
 	actualContentHash := fileHash.Sum(nil)
-	if subtle.ConstantTimeCompare(expectedContentHash, actualContentHash) == 0 {
-		return errors.New("content hashes were not equal")
-	}
-
-	return nil
-}
-
-// FetchAndExtractArchive fetches the archive at the specified URL, placing it into dir.
-// It then checks to see if it matches the "expectedHash", a hex-encoded string representing the expected sha256 sum of the file.
-// If it matches, the archive is extracted into the $dir/latest directory.
-// If the archive cannot be extracted, downloaded, or verified, then an error is returned.
-func FetchAndExtractArchive(url, dir, expectedHash string) error {
-	archiveFilePath, err := getOutputFilePath(dir, url)
-	if err != nil {
-		return fmt.Errorf("failed to determine archive download path: %w", err)
-	}
-
-	if err := downloadFile(url, archiveFilePath); err != nil {
-		return fmt.Errorf("failed to download file: %w", err)
-	}
-
-	extractPath := filepath.Join(dir, extractFolder)
-
-	if err := verifyContentHash(archiveFilePath, expectedHash); err != nil {
-		return fmt.Errorf("content hash could not be verified: %w", err)
-	}
-
-	// Clean the "latest" dir before extraction
-	if err := os.RemoveAll(extractPath); err != nil {
-		return fmt.Errorf("error cleaning archive extraction target path: %w", err)
-	}
-
-	if err := archiver.Unarchive(archiveFilePath, extractPath); err != nil {
-		return fmt.Errorf("failed to extract file: %w", err)
+	if subtle.ConstantTimeCompare(expectedFileHash, actualContentHash) == 0 {
+		return errors.New("file hash did not match expected")
 	}
 
 	return nil

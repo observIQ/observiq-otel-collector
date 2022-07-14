@@ -23,6 +23,8 @@ exceptions:
     # are creative commons. https://github.com/opencontainers/go-digest#copyright-and-license
     - path: "github.com/opencontainers/go-digest"
   unresolvableLicense:
+    # uses a custom license that says we can basically do whatever we want with it
+    - path: "github.com/xi2/xz"
     - path: "./processor/resourceattributetransposerprocessor"
     - path: "./receiver/pluginreceiver"
     - path: "./exporter/googlecloudexporter"

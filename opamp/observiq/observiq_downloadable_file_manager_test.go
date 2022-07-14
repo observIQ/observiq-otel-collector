@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package download
+package observiq
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -24,8 +25,10 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
 
 func TestDownloadFile(t *testing.T) {
@@ -140,34 +143,30 @@ func TestGetOutputFilePath(t *testing.T) {
 }
 
 func TestVerifyContentHash(t *testing.T) {
+	hash1, _ := hex.DecodeString("c87e2ca771bab6024c269b933389d2a92d4941c848c52f155b9b84e1f109fe35")
+	hash2, _ := hex.DecodeString("7e4ead2053637d9fcb7f3316e748becb8af163c6f851446eeef878a994ae5c4b")
 	testCases := []struct {
 		name        string
 		contentPath string
-		hash        string
+		hash        []byte
 		expectedErr string
 	}{
 		{
 			name:        "Content hash matches",
 			contentPath: filepath.Join("testdata", "test.txt"),
-			hash:        "c87e2ca771bab6024c269b933389d2a92d4941c848c52f155b9b84e1f109fe35",
+			hash:        hash1,
 		},
 		{
 			name:        "File does not exist",
 			contentPath: filepath.Join("testdata", "non-existant-file.txt"),
-			hash:        "c87e2ca771bab6024c269b933389d2a92d4941c848c52f155b9b84e1f109fe35",
+			hash:        hash1,
 			expectedErr: "failed to open file",
 		},
 		{
 			name:        "Content hash does not match",
 			contentPath: filepath.Join("testdata", "test.txt"),
-			hash:        "7e4ead2053637d9fcb7f3316e748becb8af163c6f851446eeef878a994ae5c4b",
-			expectedErr: "content hashes were not equal",
-		},
-		{
-			name:        "Content hash is not hex encoded",
-			contentPath: filepath.Join("testdata", "test.txt"),
-			hash:        "c87e2ca771bab6024c269b933389d2a92d4941c848c52f155b9b84e1f109fe3z",
-			expectedErr: "failed to decode content hash:",
+			hash:        hash2,
+			expectedErr: "file hash did not match expected",
 		},
 	}
 
@@ -202,32 +201,35 @@ func TestVerifyContentHash(t *testing.T) {
 }
 
 func TestDownloadAndVerifyExtraction(t *testing.T) {
+	hash1, _ := hex.DecodeString("d3bf2375be7372b34eae9bc16296ce9e40e53f5b79b329e23056c4aaf77eb47c")
+	hash2, _ := hex.DecodeString("5594349d022f7f374fa3ee777ded15f4f06a47aa08eec300bd06cdb0d2688fac")
+	hash3, _ := hex.DecodeString("e7045ebfc48a850a8ac2d342c172099f8c937a4265c55cd93cb39908278952b4")
 	testCases := []struct {
 		name         string
 		archivePath  string
-		expectedHash string
+		expectedHash []byte
 		expectedErr  string
 	}{
 		{
 			name:         "Download and extracts tar.gz files",
 			archivePath:  filepath.Join("testdata", "test.tar.gz"),
-			expectedHash: "d3bf2375be7372b34eae9bc16296ce9e40e53f5b79b329e23056c4aaf77eb47c",
+			expectedHash: hash1,
 		},
 		{
 			name:         "Download and extracts zip files",
 			archivePath:  filepath.Join("testdata", "test.zip"),
-			expectedHash: "5594349d022f7f374fa3ee777ded15f4f06a47aa08eec300bd06cdb0d2688fac",
+			expectedHash: hash2,
 		},
 		{
 			name:         "Fails to extract non-archive",
 			archivePath:  filepath.Join("testdata", "not-actually-tar.tar.gz"),
-			expectedHash: "e7045ebfc48a850a8ac2d342c172099f8c937a4265c55cd93cb39908278952b4",
+			expectedHash: hash3,
 			expectedErr:  "failed to extract file",
 		},
 		{
 			name:         "Hash does not match downloaded hash",
 			archivePath:  filepath.Join("testdata", "test.tar.gz"),
-			expectedHash: "e7045ebfc48a850a8ac2d342c172099f8c937a4265c55cd93cb39908278952b4",
+			expectedHash: hash3,
 			expectedErr:  "content hash could not be verified",
 		},
 	}
@@ -255,7 +257,13 @@ func TestDownloadAndVerifyExtraction(t *testing.T) {
 			}))
 			defer s.Close()
 
-			err := FetchAndExtractArchive(fmt.Sprintf("%s/%s", s.URL, tc.archivePath), tmpDir, tc.expectedHash)
+			file := &protobufs.DownloadableFile{
+				DownloadUrl: fmt.Sprintf("%s/%s", s.URL, tc.archivePath),
+				ContentHash: []byte(tc.expectedHash),
+			}
+
+			downloadableFileManager := newDownloadableFileManager(zap.NewNop(), tmpDir)
+			err := downloadableFileManager.FetchAndExtractArchive(file)
 			if tc.expectedErr == "" {
 				require.NoError(t, err)
 
@@ -285,12 +293,25 @@ func TestDownloadAndVerifyHTTPFailure(t *testing.T) {
 	}))
 	defer s.Close()
 
-	err := FetchAndExtractArchive(fmt.Sprintf("%s/%s", s.URL, "some-archive.tar.gz"), tmpDir, "")
+	file := &protobufs.DownloadableFile{
+		DownloadUrl: fmt.Sprintf("%s/%s", s.URL, "some-archive.tar.gz"),
+		ContentHash: []byte{},
+	}
+
+	downloadableFileManager := newDownloadableFileManager(zap.NewNop(), tmpDir)
+	err := downloadableFileManager.FetchAndExtractArchive(file)
 	require.ErrorContains(t, err, "failed to download file:")
 }
 
 func TestDownloadAndVerifyInvalidURL(t *testing.T) {
 	tmpDir := t.TempDir()
-	err := FetchAndExtractArchive("http://\t/some-archive.tar.gz", tmpDir, "")
+
+	file := &protobufs.DownloadableFile{
+		DownloadUrl: "http://\t/some-archive.tar.gz",
+		ContentHash: []byte{},
+	}
+
+	downloadableFileManager := newDownloadableFileManager(zap.NewNop(), tmpDir)
+	err := downloadableFileManager.FetchAndExtractArchive(file)
 	require.ErrorContains(t, err, "failed to determine archive download path:")
 }

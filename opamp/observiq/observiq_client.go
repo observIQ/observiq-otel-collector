@@ -44,12 +44,13 @@ const mainPackageName = "observiq-otel-collector"
 
 // Client represents a client that is connected to Iris via OpAmp
 type Client struct {
-	opampClient           client.OpAMPClient
-	logger                *zap.Logger
-	ident                 *identity
-	configManager         opamp.ConfigManager
-	collector             collector.Collector
-	packagesStateProvider types.PackagesStateProvider
+	opampClient             client.OpAMPClient
+	logger                  *zap.Logger
+	ident                   *identity
+	configManager           opamp.ConfigManager
+	downloadableFileManager opamp.DownloadableFileManager
+	collector               collector.Collector
+	packagesStateProvider   types.PackagesStateProvider
 
 	currentConfig opamp.Config
 }
@@ -60,6 +61,7 @@ type NewClientArgs struct {
 	Config        opamp.Config
 	Collector     collector.Collector
 
+	TmpPath             string
 	ManagerConfigPath   string
 	CollectorConfigPath string
 	LoggerConfigPath    string
@@ -71,15 +73,14 @@ func NewClient(args *NewClientArgs) (opamp.Client, error) {
 
 	configManager := NewAgentConfigManager(args.DefaultLogger)
 
-	packagesStateProvider := newPackagesStateProvider(clientLogger, "package_statuses.yaml")
-
 	observiqClient := &Client{
-		logger:                clientLogger,
-		ident:                 newIdentity(clientLogger, args.Config),
-		configManager:         configManager,
-		collector:             args.Collector,
-		currentConfig:         args.Config,
-		packagesStateProvider: packagesStateProvider,
+		logger:                  clientLogger,
+		ident:                   newIdentity(clientLogger, args.Config),
+		configManager:           configManager,
+		downloadableFileManager: newDownloadableFileManager(clientLogger, args.TmpPath),
+		collector:               args.Collector,
+		currentConfig:           args.Config,
+		packagesStateProvider:   newPackagesStateProvider(clientLogger, "package_statuses.yaml"),
 	}
 
 	// Parse URL to determin scheme
@@ -265,25 +266,34 @@ func (c *Client) onPackagesAvailableHandler(packagesAvailable *protobufs.Package
 		lastPkgStatusMap = lastPackageStatuses.GetPackages()
 	}
 
-	curPackages := c.createPackageStatusMap(packagesAvailable.GetPackages(), lastPkgStatusMap)
+	curPackages, curPackageFiles := c.createPackageMaps(packagesAvailable.GetPackages(), lastPkgStatusMap)
 	curPackageStatuses.Packages = curPackages
 
-	// We may have to modify this in the future to return an error if this causes issues for the actual Update
+	// This is an error because we need this file for communication during the update
 	if err = c.packagesStateProvider.SetLastReportedStatuses(curPackageStatuses); err != nil {
-		c.logger.Warn("Failed to save last reported package statuses", zap.Error(err))
+		return fmt.Errorf("failed to save last reported package statuses: %w", err)
 	}
 
 	if err = c.opampClient.SetPackageStatuses(curPackageStatuses); err != nil {
-		return fmt.Errorf("failed to set package statuses: %w", err)
+		return fmt.Errorf("opamp client failed to set package statuses: %w", err)
+	}
+
+	// Start update if applicable
+	collectorDownloadableFile := curPackageFiles[mainPackageName]
+	if collectorDownloadableFile != nil {
+		if err := c.installPackageFromFile(collectorDownloadableFile, curPackageStatuses); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-func (c *Client) createPackageStatusMap(
+func (c *Client) createPackageMaps(
 	pkgAvailMap map[string]*protobufs.PackageAvailable,
-	lastPkgStatusMap map[string]*protobufs.PackageStatus) map[string]*protobufs.PackageStatus {
+	lastPkgStatusMap map[string]*protobufs.PackageStatus) (map[string]*protobufs.PackageStatus, map[string]*protobufs.DownloadableFile) {
 	pkgStatusMap := map[string]*protobufs.PackageStatus{}
+	pkgFileMap := map[string]*protobufs.DownloadableFile{}
 
 	// Loop through all of the available packages sent from the server
 	for name, availPkg := range pkgAvailMap {
@@ -315,14 +325,17 @@ func (c *Client) createPackageStatusMap(
 				if agentHash == nil {
 					pkgStatusMap[name].AgentHasHash = availPkg.GetHash()
 				}
-			} else {
-				if availPkg.GetVersion() != "" {
-					pkgStatusMap[name].Status = protobufs.PackageStatus_Installing
-				}
+				break
 			}
 
-			if availPkg.GetVersion() != "" && version.Version() != availPkg.GetVersion() {
-				pkgStatusMap[name].Status = protobufs.PackageStatus_Installing
+			if availPkg.GetVersion() != "" {
+				if availPkg.File != nil {
+					pkgStatusMap[name].Status = protobufs.PackageStatus_Installing
+					pkgFileMap[name] = availPkg.GetFile()
+				} else {
+					pkgStatusMap[name].Status = protobufs.PackageStatus_InstallFailed
+					pkgStatusMap[name].ErrorMessage = fmt.Sprintf("Package %s does not have a valid downloadable file", name)
+				}
 			}
 		// If it's not an expected package, return a failed status
 		default:
@@ -336,7 +349,30 @@ func (c *Client) createPackageStatusMap(
 		}
 	}
 
-	return pkgStatusMap
+	return pkgStatusMap, pkgFileMap
+}
+
+func (c *Client) installPackageFromFile(file *protobufs.DownloadableFile, curPackageStatuses *protobufs.PackageStatuses) error {
+	if fileManagerErr := c.downloadableFileManager.FetchAndExtractArchive(file); fileManagerErr != nil {
+		// Change existing status to show that install failed and get ready to send
+		curPackageStatuses.Packages[mainPackageName].Status = protobufs.PackageStatus_InstallFailed
+		curPackageStatuses.Packages[mainPackageName].ErrorMessage =
+			fmt.Sprintf("Failed to download and verify package %s's downloadable file", mainPackageName)
+
+		if err := c.packagesStateProvider.SetLastReportedStatuses(curPackageStatuses); err != nil {
+			c.logger.Error("Failed to save last reported package statuses", zap.Error(err))
+		}
+
+		if err := c.opampClient.SetPackageStatuses(curPackageStatuses); err != nil {
+			c.logger.Error("OpAMP client failed to set package statuses", zap.Error(err))
+		}
+
+		return fmt.Errorf("failed download, verify, & extract package's downloadable file: %w", fileManagerErr)
+	}
+
+	// TODO: Start Updater
+
+	return nil
 }
 
 func (c *Client) onGetEffectiveConfigHandler(_ context.Context) (*protobufs.EffectiveConfig, error) {
