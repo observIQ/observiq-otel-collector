@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	colmocks "github.com/observiq/observiq-otel-collector/collector/mocks"
@@ -1159,8 +1160,12 @@ func TestClient_onPackagesAvailableHandler(t *testing.T) {
 				mockProvider := mocks.NewMockPackagesStateProvider(t)
 				mockProvider.On("LastReportedStatuses").Return(packageStatuses, nil)
 				mockProvider.On("SetLastReportedStatuses", mock.Anything).Return(nil)
+				wg := sync.WaitGroup{}
+				wg.Add(1)
 				mockFileManager := mocks.NewMockDownloadableFileManager(t)
-				mockFileManager.On("FetchAndExtractArchive", mock.Anything).Return(nil)
+				mockFileManager.On("FetchAndExtractArchive", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+					wg.Done()
+				})
 				mockOpAmpClient := mocks.NewMockOpAMPClient(t)
 				mockOpAmpClient.On("SetPackageStatuses", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 					status := args.Get(0).(*protobufs.PackageStatuses)
@@ -1186,6 +1191,7 @@ func TestClient_onPackagesAvailableHandler(t *testing.T) {
 				}
 
 				err := c.onPackagesAvailableHandler(packagesAvailableNew)
+				wg.Wait()
 				assert.NoError(t, err)
 			},
 		},
@@ -1283,8 +1289,12 @@ func TestClient_onPackagesAvailableHandler(t *testing.T) {
 					Packages:        packagesNew,
 				}
 
+				wg := sync.WaitGroup{}
+				wg.Add(1)
 				mockFileManager := mocks.NewMockDownloadableFileManager(t)
-				mockFileManager.On("FetchAndExtractArchive", mock.Anything).Return(expectedErr)
+				mockFileManager.On("FetchAndExtractArchive", mock.Anything).Return(expectedErr).Run(func(args mock.Arguments) {
+					wg.Done()
+				})
 				mockProvider := mocks.NewMockPackagesStateProvider(t)
 				mockProvider.On("LastReportedStatuses").Return(packageStatuses, nil)
 				mockProvider.On("SetLastReportedStatuses", mock.Anything).Return(nil)
@@ -1306,7 +1316,6 @@ func TestClient_onPackagesAvailableHandler(t *testing.T) {
 				})
 				mockOpAmpClient.On("SetPackageStatuses", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 					status := args.Get(0).(*protobufs.PackageStatuses)
-
 					assert.NotNil(t, status)
 					assert.Equal(t, "", status.ErrorMessage)
 					assert.Equal(t, packagesAvailableNew.AllPackagesHash, status.ServerProvidedAllPackagesHash)
@@ -1328,7 +1337,8 @@ func TestClient_onPackagesAvailableHandler(t *testing.T) {
 				}
 
 				err := c.onPackagesAvailableHandler(packagesAvailableNew)
-				assert.ErrorIs(t, err, expectedErr)
+				wg.Wait()
+				assert.NoError(t, err)
 			},
 		},
 		{

@@ -343,12 +343,7 @@ func (c *Client) onPackagesAvailableHandler(packagesAvailable *protobufs.Package
 	collectorDownloadableFile := curPackageFiles[mainPackageName]
 	if collectorDownloadableFile != nil {
 		c.updatingPackage = true
-		if err := c.installPackageFromFile(collectorDownloadableFile, curPackageStatuses); err != nil {
-			c.updatingPackage = false
-			return err
-		}
-		// TODO: When we set this to false will change once we use a new goroutine to start installation
-		c.updatingPackage = false
+		go c.installPackageFromFile(collectorDownloadableFile, curPackageStatuses)
 	}
 
 	return nil
@@ -417,7 +412,9 @@ func (c *Client) createPackageMaps(
 	return pkgStatusMap, pkgFileMap
 }
 
-func (c *Client) installPackageFromFile(file *protobufs.DownloadableFile, curPackageStatuses *protobufs.PackageStatuses) error {
+// installPackageFromFile tries to download and extract the given tarball and then start up the new Updater binary that was
+// inside of it
+func (c *Client) installPackageFromFile(file *protobufs.DownloadableFile, curPackageStatuses *protobufs.PackageStatuses) {
 	if fileManagerErr := c.downloadableFileManager.FetchAndExtractArchive(file); fileManagerErr != nil {
 		// Change existing status to show that install failed and get ready to send
 		curPackageStatuses.Packages[mainPackageName].Status = protobufs.PackageStatus_InstallFailed
@@ -432,12 +429,13 @@ func (c *Client) installPackageFromFile(file *protobufs.DownloadableFile, curPac
 			c.logger.Error("OpAMP client failed to set package statuses", zap.Error(err))
 		}
 
-		return fmt.Errorf("failed download, verify, & extract package's downloadable file: %w", fileManagerErr)
+		c.updatingPackage = false
+		return
 	}
 
 	// TODO: Start Updater
 
-	return nil
+	return
 }
 
 func (c *Client) onGetEffectiveConfigHandler(_ context.Context) (*protobufs.EffectiveConfig, error) {
