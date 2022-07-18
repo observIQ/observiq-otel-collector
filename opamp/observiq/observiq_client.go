@@ -51,6 +51,7 @@ type Client struct {
 	downloadableFileManager opamp.DownloadableFileManager
 	collector               collector.Collector
 	packagesStateProvider   types.PackagesStateProvider
+	updatingPackage         bool
 
 	currentConfig opamp.Config
 }
@@ -80,7 +81,7 @@ func NewClient(args *NewClientArgs) (opamp.Client, error) {
 		downloadableFileManager: newDownloadableFileManager(clientLogger, args.TmpPath),
 		collector:               args.Collector,
 		currentConfig:           args.Config,
-		packagesStateProvider:   newPackagesStateProvider(clientLogger, "package_statuses.yaml"),
+		packagesStateProvider:   newPackagesStateProvider(clientLogger, "package_statuses.json"),
 	}
 
 	// Parse URL to determin scheme
@@ -133,11 +134,18 @@ func (c *Client) Connect(ctx context.Context) error {
 	// Compose and set the agent description
 	if err := c.opampClient.SetAgentDescription(c.ident.ToAgentDescription()); err != nil {
 		c.logger.Error("Error while setting agent description", zap.Error(err))
+
+		// Set package status file for error (for Updater to pick up), but do not force send to Server
+		c.attemptFailedInstall(fmt.Sprintf("Error while setting agent description: %s", err))
+
 		return err
 	}
 
 	tlsCfg, err := c.currentConfig.ToTLS()
 	if err != nil {
+		// Set package status file for error (for Updater to pick up), but do not force send to Server
+		c.attemptFailedInstall(fmt.Sprintf("Failed creating TLS config: %s", err))
+
 		return fmt.Errorf("failed creating TLS config: %w", err)
 	}
 
@@ -172,10 +180,19 @@ func (c *Client) Connect(ctx context.Context) error {
 	// Pass in the background context here so it's clear we need to shutdown the collector instead
 	// of the context shutting it down via a cancel.
 	if err := c.collector.Run(context.Background()); err != nil {
+		// Set package status file for error (for Updater to pick up), but do not force send to Server
+		c.attemptFailedInstall(fmt.Sprintf("Collector failed to start: %s", err))
+
 		return fmt.Errorf("collector failed to start: %w", err)
 	}
 
-	return c.opampClient.Start(ctx, settings)
+	err = c.opampClient.Start(ctx, settings)
+	if err != nil {
+		// Set package status file for error (for Updater to pick up), but do not force send to Server
+		c.attemptFailedInstall(fmt.Sprintf("OpAMP client failed to start: %s", err))
+	}
+
+	return err
 }
 
 // Disconnect disconnects from the server
@@ -188,10 +205,44 @@ func (c *Client) Disconnect(ctx context.Context) error {
 
 func (c *Client) onConnectHandler() {
 	c.logger.Info("Successfully connected to server")
+
+	// See if we can retrieve the PackageStatuses where the main package is in an installing state
+	lastPackageStatuses := c.getMainPackageInstallingLastStatuses()
+	if lastPackageStatuses == nil {
+		return
+	}
+
+	lastMainPackageStatus := lastPackageStatuses.Packages[mainPackageName]
+	// If in the middle of an install and we just connected, this is most likely becasue the collector was just spun up fresh by the Updater.
+	// If the current version matches the server offered version, this implies a good install and so we should set the PackageStatuses and
+	// send it to the OpAMP Server. If the version does not match, just change the PackageStatues JSON so that the Updater can start rollback.
+	if lastMainPackageStatus.ServerOfferedVersion == version.Version() {
+		lastMainPackageStatus.Status = protobufs.PackageStatus_Installed
+		lastMainPackageStatus.AgentHasVersion = version.Version()
+		lastMainPackageStatus.AgentHasHash = lastMainPackageStatus.ServerOfferedHash
+
+		if err := c.packagesStateProvider.SetLastReportedStatuses(lastPackageStatuses); err != nil {
+			c.logger.Error("Failed to set last reported package statuses", zap.Error(err))
+		}
+
+		// Only immediately send to server on success. Rollback will send this for failure.
+		if err := c.opampClient.SetPackageStatuses(lastPackageStatuses); err != nil {
+			c.logger.Error("OpAMP client failed to set package statuses", zap.Error(err))
+		}
+	} else {
+		lastMainPackageStatus.Status = protobufs.PackageStatus_InstallFailed
+
+		if err := c.packagesStateProvider.SetLastReportedStatuses(lastPackageStatuses); err != nil {
+			c.logger.Error("Failed to set last reported package statuses", zap.Error(err))
+		}
+	}
 }
 
 func (c *Client) onConnectFailedHandler(err error) {
 	c.logger.Error("Failed to connect to server", zap.Error(err))
+
+	// Set package status file for error (for Updater to pick up), but do not force send to Server
+	c.attemptFailedInstall(fmt.Sprintf("Failed to connect to BindPlane: %s", err))
 }
 
 func (c *Client) onErrorHandler(errResp *protobufs.ServerErrorResponse) {
@@ -252,6 +303,16 @@ func (c *Client) onPackagesAvailableHandler(packagesAvailable *protobufs.Package
 		Packages:                      map[string]*protobufs.PackageStatus{},
 	}
 
+	// Don't respond to PackagesAvailable messages while currently installing. We use this in memory data rather than the
+	// PackageStatuses persistant data in order to ensure that we don't get stuck in a stuck state
+	if c.updatingPackage {
+		curPackageStatuses.ErrorMessage = "Already installing new packages"
+		if err := c.opampClient.SetPackageStatuses(curPackageStatuses); err != nil {
+			c.logger.Error("OpAMP client failed to set package statuses", zap.Error(err))
+		}
+		return fmt.Errorf("failed because already installing packages")
+	}
+
 	// Retrieve last known status (this should return with minimal info even on first time)
 	lastPackageStatuses, err := c.packagesStateProvider.LastReportedStatuses()
 
@@ -281,9 +342,13 @@ func (c *Client) onPackagesAvailableHandler(packagesAvailable *protobufs.Package
 	// Start update if applicable
 	collectorDownloadableFile := curPackageFiles[mainPackageName]
 	if collectorDownloadableFile != nil {
+		c.updatingPackage = true
 		if err := c.installPackageFromFile(collectorDownloadableFile, curPackageStatuses); err != nil {
+			c.updatingPackage = false
 			return err
 		}
+		// TODO: When we set this to false will change once we use a new goroutine to start installation
+		c.updatingPackage = false
 	}
 
 	return nil
@@ -378,4 +443,45 @@ func (c *Client) installPackageFromFile(file *protobufs.DownloadableFile, curPac
 func (c *Client) onGetEffectiveConfigHandler(_ context.Context) (*protobufs.EffectiveConfig, error) {
 	c.logger.Debug("Remote Compose Effective config handler")
 	return c.configManager.ComposeEffectiveConfig()
+}
+
+// attemptFailedInstall sets PackageStatuses status to failed and error message if we are in the middle of an install.
+// This should allow the updater to pick this up and start the rollback process
+func (c Client) attemptFailedInstall(errMsg string) {
+	// See if we can retrieve the PackageStatuses where the main package is in an installing state
+	lastPackageStatuses := c.getMainPackageInstallingLastStatuses()
+	if lastPackageStatuses == nil {
+		return
+	}
+
+	lastMainPackageStatus := lastPackageStatuses.Packages[mainPackageName]
+	lastMainPackageStatus.Status = protobufs.PackageStatus_InstallFailed
+	lastMainPackageStatus.ErrorMessage = errMsg
+
+	if err := c.packagesStateProvider.SetLastReportedStatuses(lastPackageStatuses); err != nil {
+		c.logger.Error("Failed to set last reported package statuses", zap.Error(err))
+	}
+}
+
+func (c Client) getMainPackageInstallingLastStatuses() *protobufs.PackageStatuses {
+	lastPackageStatuses, err := c.packagesStateProvider.LastReportedStatuses()
+	if err != nil {
+		c.logger.Error("Failed to retrieve last reported package statuses", zap.Error(err))
+		return nil
+	}
+
+	// If we have no info on our main package, nothing else to do
+	if lastPackageStatuses == nil || lastPackageStatuses.Packages == nil || lastPackageStatuses.Packages[mainPackageName] == nil {
+		c.logger.Warn("Failed to retrieve last reported package statuses for main package")
+		return nil
+	}
+
+	lastMainPackageStatus := lastPackageStatuses.Packages[mainPackageName]
+
+	// If we were not installing before the connection, nothing else to do
+	if lastMainPackageStatus.Status != protobufs.PackageStatus_Installing {
+		return nil
+	}
+
+	return lastPackageStatuses
 }

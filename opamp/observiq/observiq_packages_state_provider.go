@@ -17,6 +17,7 @@ package observiq
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -27,38 +28,36 @@ import (
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
 	"go.uber.org/zap"
-	"gopkg.in/yaml.v3"
 )
 
 // Ensure interface is satisfied
 var _ types.PackagesStateProvider = (*packagesStateProvider)(nil)
 
-// packagesStateProvider represents a PackagesStateProvider which uses a yaml file to persist PackageStatuses
+// packagesStateProvider represents a PackagesStateProvider which uses a json file to persist PackageStatuses
 type packagesStateProvider struct {
-	yamlPath string
+	jsonPath string
 	logger   *zap.Logger
 }
 
 type packageState struct {
-	Name          string                         `yaml:"name"`
-	UpdaterStart  bool                           `yaml:"updater_start"`
-	AgentVersion  string                         `yaml:"agent_version"`
-	AgentHash     []byte                         `yaml:"agent_hash"`
-	ServerVersion string                         `yaml:"server_version"`
-	ServerHash    []byte                         `yaml:"server_hash"`
-	Status        protobufs.PackageStatus_Status `yaml:"status"`
-	ErrorMessage  string                         `yaml:"error_message"`
+	Name          string                         `json:"name"`
+	AgentVersion  string                         `json:"agent_version"`
+	AgentHash     []byte                         `json:"agent_hash"`
+	ServerVersion string                         `json:"server_version"`
+	ServerHash    []byte                         `json:"server_hash"`
+	Status        protobufs.PackageStatus_Status `json:"status"`
+	ErrorMessage  string                         `json:"error_message"`
 }
 type packageStates struct {
-	AllPackagesHash []byte                   `yaml:"all_packages_hash"`
-	AllErrorMessage string                   `yaml:"all_error_message"`
-	PackageStates   map[string]*packageState `yaml:"package_states"`
+	AllPackagesHash []byte                   `json:"all_packages_hash"`
+	AllErrorMessage string                   `json:"all_error_message"`
+	PackageStates   map[string]*packageState `json:"package_states"`
 }
 
 // newPackagesStateProvider creates a new OpAmp PackagesStateProvider
-func newPackagesStateProvider(logger *zap.Logger, yamlPath string) types.PackagesStateProvider {
+func newPackagesStateProvider(logger *zap.Logger, jsonPath string) types.PackagesStateProvider {
 	return &packagesStateProvider{
-		yamlPath: filepath.Clean(yamlPath),
+		jsonPath: filepath.Clean(jsonPath),
 		logger:   logger,
 	}
 }
@@ -128,7 +127,7 @@ func (p *packagesStateProvider) DeletePackage(_ string) error {
 	return errors.New("method not implemented: PackageStateProvider DeletePackage")
 }
 
-// LastReportedStatuses retrieves the PackagesStatuses from a saved yaml file
+// LastReportedStatuses retrieves the PackagesStatuses from a saved json file
 func (p *packagesStateProvider) LastReportedStatuses() (*protobufs.PackageStatuses, error) {
 	p.logger.Debug("Retrieve last reported package statuses")
 
@@ -144,44 +143,44 @@ func (p *packagesStateProvider) LastReportedStatuses() (*protobufs.PackageStatus
 	}
 
 	// If there's a problem reading the file, we just return a barebones PackageStatuses.
-	if _, err := os.Stat(p.yamlPath); errors.Is(err, os.ErrNotExist) {
-		p.logger.Debug("Package statuses yaml doesn't exist")
+	if _, err := os.Stat(p.jsonPath); errors.Is(err, os.ErrNotExist) {
+		p.logger.Debug("Package statuses json doesn't exist")
 		return packageStatuses, nil
 	}
 
-	statusesBytes, err := os.ReadFile(p.yamlPath)
+	statusesBytes, err := os.ReadFile(p.jsonPath)
 	if err != nil {
-		return packageStatuses, fmt.Errorf("failed to read package statuses yaml: %w", err)
+		return packageStatuses, fmt.Errorf("failed to read package statuses json: %w", err)
 	}
 
 	var packageStates packageStates
-	if err := yaml.Unmarshal(statusesBytes, &packageStates); err != nil {
+	if err := json.Unmarshal(statusesBytes, &packageStates); err != nil {
 		return packageStatuses, fmt.Errorf("failed to unmarshal package statuses: %w", err)
 	}
 
 	return packageStatesToStatuses(packageStates), nil
 }
 
-// SetLastReportedStatuses saves the given PackageStatuses into a yaml file
+// SetLastReportedStatuses saves the given PackageStatuses into a json file
 func (p *packagesStateProvider) SetLastReportedStatuses(statuses *protobufs.PackageStatuses) error {
 	p.logger.Debug("Set last reported package statuses")
 
 	// If there is any problem saving the new package statuses, make sure that we delete any existing file
 	// in order to not have outdated data as its better to start fresh
-	if err := os.Remove(p.yamlPath); err != nil {
-		p.logger.Debug("Failed to delete package statuses yaml", zap.Error(err))
+	if err := os.Remove(p.jsonPath); err != nil {
+		p.logger.Debug("Failed to delete package statuses json", zap.Error(err))
 	}
 
 	states := packageStatusesToStates(statuses)
 
-	data, err := yaml.Marshal(states)
+	data, err := json.Marshal(states)
 	if err != nil {
 		return fmt.Errorf("failed to marshal package statuses: %w", err)
 	}
 
-	// Write data to a package_statuses.yaml file, with 0600 file permission
-	if err := os.WriteFile(p.yamlPath, data, 0600); err != nil {
-		return fmt.Errorf("failed to write package statuses yaml: %w", err)
+	// Write data to a package_statuses.json file, with 0600 file permission
+	if err := os.WriteFile(p.jsonPath, data, 0600); err != nil {
+		return fmt.Errorf("failed to write package statuses json: %w", err)
 	}
 
 	return nil

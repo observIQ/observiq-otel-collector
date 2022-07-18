@@ -37,17 +37,17 @@ func TestLastReportedStatusesLinux(t *testing.T) {
 			desc: "Problem reading file",
 			testFunc: func(t *testing.T) {
 				tmpDir := t.TempDir()
-				cantReadYaml := filepath.Join(tmpDir, "noread.yaml")
-				os.WriteFile(cantReadYaml, nil, 0000)
+				cantReadJSON := filepath.Join(tmpDir, "noread.json")
+				os.WriteFile(cantReadJSON, nil, 0000)
 				logger := zap.NewNop()
 				p := &packagesStateProvider{
 					logger:   logger,
-					yamlPath: cantReadYaml,
+					jsonPath: cantReadJSON,
 				}
 
 				actual, err := p.LastReportedStatuses()
 
-				assert.ErrorContains(t, err, "failed to read package statuses yaml:")
+				assert.ErrorContains(t, err, "failed to read package statuses json:")
 				assert.Nil(t, actual.ServerProvidedAllPackagesHash)
 				assert.Equal(t, "", actual.ErrorMessage)
 				assert.Equal(t, 1, len(actual.Packages))
@@ -77,11 +77,11 @@ func TestSetLastReportedStatusesLinux(t *testing.T) {
 			testFunc: func(t *testing.T) {
 				tmpDir := t.TempDir()
 				os.Chmod(tmpDir, 0400)
-				testYaml := filepath.Join(tmpDir, "test.yaml")
+				testJSON := filepath.Join(tmpDir, "test.json")
 				logger := zap.NewNop()
 				p := &packagesStateProvider{
 					logger:   logger,
-					yamlPath: testYaml,
+					jsonPath: testJSON,
 				}
 
 				packageStatuses := &protobufs.PackageStatuses{
@@ -90,12 +90,12 @@ func TestSetLastReportedStatusesLinux(t *testing.T) {
 
 				err := p.SetLastReportedStatuses(packageStatuses)
 
-				assert.ErrorContains(t, err, "failed to write package statuses yaml:")
+				assert.ErrorContains(t, err, "failed to write package statuses json:")
 
 				// Right now the following code won't work, because the file can't be deleted as we don't have write permissions.
 				// It would be nice to have a way to test a write failure, while still being able to delete the file.
 				// exists := true
-				// if _, err = os.Stat(testYaml); os.IsNotExist(err) {
+				// if _, err = os.Stat(testJSON); os.IsNotExist(err) {
 				// 	exists = false
 				// }
 				// assert.False(t, exists)

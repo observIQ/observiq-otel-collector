@@ -16,6 +16,7 @@ package observiq
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -27,7 +28,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
-	"gopkg.in/yaml.v3"
 )
 
 func TestNewPackagesStateProvider(t *testing.T) {
@@ -39,7 +39,7 @@ func TestNewPackagesStateProvider(t *testing.T) {
 			desc: "New PackagesStateProvider",
 			testFunc: func(t *testing.T) {
 				logger := zap.NewNop()
-				actual := newPackagesStateProvider(logger, "test.yaml")
+				actual := newPackagesStateProvider(logger, "test.json")
 
 				packagesStateProvider, ok := actual.(*packagesStateProvider)
 				require.True(t, ok)
@@ -293,11 +293,11 @@ func TestLastReportedStatuses(t *testing.T) {
 		{
 			desc: "File doesn't exist",
 			testFunc: func(t *testing.T) {
-				noExistYaml := "garbage.yaml"
+				noExistJSON := "garbage.json"
 				logger := zap.NewNop()
 				p := &packagesStateProvider{
 					logger:   logger,
-					yamlPath: noExistYaml,
+					jsonPath: noExistJSON,
 				}
 
 				actual, err := p.LastReportedStatuses()
@@ -316,13 +316,13 @@ func TestLastReportedStatuses(t *testing.T) {
 			},
 		},
 		{
-			desc: "Bad yaml file",
+			desc: "Bad json file",
 			testFunc: func(t *testing.T) {
-				badYaml := "testdata/package_statuses_bad.yaml"
+				badJSON := "testdata/package_statuses_bad.json"
 				logger := zap.NewNop()
 				p := &packagesStateProvider{
 					logger:   logger,
-					yamlPath: badYaml,
+					jsonPath: badJSON,
 				}
 
 				actual, err := p.LastReportedStatuses()
@@ -341,9 +341,9 @@ func TestLastReportedStatuses(t *testing.T) {
 			},
 		},
 		{
-			desc: "Good yaml file",
+			desc: "Good json file",
 			testFunc: func(t *testing.T) {
-				badYaml := "testdata/package_statuses_good.yaml"
+				badJSON := "testdata/package_statuses_good.json"
 				pkgName := "package"
 				agentVersion := "1.0"
 				agentHash := []byte("hash1")
@@ -355,7 +355,7 @@ func TestLastReportedStatuses(t *testing.T) {
 				logger := zap.NewNop()
 				p := &packagesStateProvider{
 					logger:   logger,
-					yamlPath: badYaml,
+					jsonPath: badJSON,
 				}
 
 				actual, err := p.LastReportedStatuses()
@@ -397,11 +397,11 @@ func TestSetLastReportedStatuses(t *testing.T) {
 			desc: "New file",
 			testFunc: func(t *testing.T) {
 				tmpDir := t.TempDir()
-				testYaml := filepath.Join(tmpDir, "test.yaml")
+				testJSON := filepath.Join(tmpDir, "test.json")
 				logger := zap.NewNop()
 				p := &packagesStateProvider{
 					logger:   logger,
-					yamlPath: testYaml,
+					jsonPath: testJSON,
 				}
 
 				packages := map[string]*protobufs.PackageStatus{
@@ -424,10 +424,10 @@ func TestSetLastReportedStatuses(t *testing.T) {
 				err := p.SetLastReportedStatuses(packageStatuses)
 				assert.NoError(t, err)
 
-				bytes, err := os.ReadFile(testYaml)
+				bytes, err := os.ReadFile(testJSON)
 				assert.NoError(t, err)
 				var fileStates packageStates
-				err = yaml.Unmarshal(bytes, &fileStates)
+				err = json.Unmarshal(bytes, &fileStates)
 				assert.NoError(t, err)
 				assert.Equal(t, allHash, fileStates.AllPackagesHash)
 				assert.Equal(t, allErrMsg, fileStates.AllErrorMessage)
@@ -445,13 +445,13 @@ func TestSetLastReportedStatuses(t *testing.T) {
 			desc: "Existing file",
 			testFunc: func(t *testing.T) {
 				tmpDir := t.TempDir()
-				testYaml := filepath.Join(tmpDir, "test.yaml")
-				os.WriteFile(testYaml, nil, 0600)
+				testJSON := filepath.Join(tmpDir, "test.json")
+				os.WriteFile(testJSON, nil, 0600)
 
 				logger := zap.NewNop()
 				p := &packagesStateProvider{
 					logger:   logger,
-					yamlPath: testYaml,
+					jsonPath: testJSON,
 				}
 
 				packages := map[string]*protobufs.PackageStatus{
@@ -474,10 +474,10 @@ func TestSetLastReportedStatuses(t *testing.T) {
 				err := p.SetLastReportedStatuses(packageStatuses)
 				assert.NoError(t, err)
 
-				bytes, err := os.ReadFile(testYaml)
+				bytes, err := os.ReadFile(testJSON)
 				assert.NoError(t, err)
 				var fileStates packageStates
-				err = yaml.Unmarshal(bytes, &fileStates)
+				err = json.Unmarshal(bytes, &fileStates)
 				assert.NoError(t, err)
 				assert.Equal(t, allHash, fileStates.AllPackagesHash)
 				assert.Equal(t, allErrMsg, fileStates.AllErrorMessage)
