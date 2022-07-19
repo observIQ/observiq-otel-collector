@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sync"
 
 	"github.com/observiq/observiq-otel-collector/collector"
 	"github.com/observiq/observiq-otel-collector/internal/version"
@@ -51,6 +52,7 @@ type Client struct {
 	downloadableFileManager opamp.DownloadableFileManager
 	collector               collector.Collector
 	packagesStateProvider   types.PackagesStateProvider
+	mutex                   sync.Mutex
 	updatingPackage         bool
 
 	currentConfig opamp.Config
@@ -305,7 +307,7 @@ func (c *Client) onPackagesAvailableHandler(packagesAvailable *protobufs.Package
 
 	// Don't respond to PackagesAvailable messages while currently installing. We use this in memory data rather than the
 	// PackageStatuses persistant data in order to ensure that we don't get stuck in a stuck state
-	if c.updatingPackage {
+	if c.safeGetUpdatingPackage() {
 		curPackageStatuses.ErrorMessage = "Already installing new packages"
 		if err := c.opampClient.SetPackageStatuses(curPackageStatuses); err != nil {
 			c.logger.Error("OpAMP client failed to set package statuses", zap.Error(err))
@@ -342,7 +344,7 @@ func (c *Client) onPackagesAvailableHandler(packagesAvailable *protobufs.Package
 	// Start update if applicable
 	collectorDownloadableFile := curPackageFiles[mainPackageName]
 	if collectorDownloadableFile != nil {
-		c.updatingPackage = true
+		c.safeSetUpdatingPackage(true)
 		go c.installPackageFromFile(collectorDownloadableFile, curPackageStatuses)
 	}
 
@@ -429,7 +431,7 @@ func (c *Client) installPackageFromFile(file *protobufs.DownloadableFile, curPac
 			c.logger.Error("OpAMP client failed to set package statuses", zap.Error(err))
 		}
 
-		c.updatingPackage = false
+		c.safeSetUpdatingPackage(false)
 		return
 	}
 
@@ -445,7 +447,7 @@ func (c *Client) onGetEffectiveConfigHandler(_ context.Context) (*protobufs.Effe
 
 // attemptFailedInstall sets PackageStatuses status to failed and error message if we are in the middle of an install.
 // This should allow the updater to pick this up and start the rollback process
-func (c Client) attemptFailedInstall(errMsg string) {
+func (c *Client) attemptFailedInstall(errMsg string) {
 	// See if we can retrieve the PackageStatuses where the main package is in an installing state
 	lastPackageStatuses := c.getMainPackageInstallingLastStatuses()
 	if lastPackageStatuses == nil {
@@ -461,7 +463,7 @@ func (c Client) attemptFailedInstall(errMsg string) {
 	}
 }
 
-func (c Client) getMainPackageInstallingLastStatuses() *protobufs.PackageStatuses {
+func (c *Client) getMainPackageInstallingLastStatuses() *protobufs.PackageStatuses {
 	lastPackageStatuses, err := c.packagesStateProvider.LastReportedStatuses()
 	if err != nil {
 		c.logger.Error("Failed to retrieve last reported package statuses", zap.Error(err))
@@ -482,4 +484,16 @@ func (c Client) getMainPackageInstallingLastStatuses() *protobufs.PackageStatuse
 	}
 
 	return lastPackageStatuses
+}
+
+func (c *Client) safeSetUpdatingPackage(value bool) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.updatingPackage = value
+}
+
+func (c *Client) safeGetUpdatingPackage() bool {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	return c.updatingPackage
 }

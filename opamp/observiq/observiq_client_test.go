@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	colmocks "github.com/observiq/observiq-otel-collector/collector/mocks"
 	"github.com/observiq/observiq-otel-collector/internal/version"
@@ -1191,8 +1192,13 @@ func TestClient_onPackagesAvailableHandler(t *testing.T) {
 				}
 
 				err := c.onPackagesAvailableHandler(packagesAvailableNew)
-				wg.Wait()
 				assert.NoError(t, err)
+				wg.Wait()
+				// This is a half baked check. Ideally we'd like to check that this is true after the spun up goroutine is finished
+				// but there is no way to guarantee that without modifying code. So instead we'll do a partial check and just ensure
+				// that it was true at some point after the main function finishes (this will change anyways once updater monitoring
+				// is added)
+				assert.True(t, c.safeGetUpdatingPackage())
 			},
 		},
 		{
@@ -1289,16 +1295,13 @@ func TestClient_onPackagesAvailableHandler(t *testing.T) {
 					Packages:        packagesNew,
 				}
 
-				wg := sync.WaitGroup{}
-				wg.Add(1)
 				mockFileManager := mocks.NewMockDownloadableFileManager(t)
-				mockFileManager.On("FetchAndExtractArchive", mock.Anything).Return(expectedErr).Run(func(args mock.Arguments) {
-					wg.Done()
-				})
+				mockFileManager.On("FetchAndExtractArchive", mock.Anything).Return(expectedErr)
 				mockProvider := mocks.NewMockPackagesStateProvider(t)
 				mockProvider.On("LastReportedStatuses").Return(packageStatuses, nil)
 				mockProvider.On("SetLastReportedStatuses", mock.Anything).Return(nil)
 				mockOpAmpClient := mocks.NewMockOpAMPClient(t)
+				// This is for the initial status that is sent in the main function.
 				mockOpAmpClient.On("SetPackageStatuses", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
 					status := args.Get(0).(*protobufs.PackageStatuses)
 
@@ -1314,6 +1317,7 @@ func TestClient_onPackagesAvailableHandler(t *testing.T) {
 					assert.Equal(t, packageStatuses.Packages[collectorPackageName].AgentHasHash, status.Packages[collectorPackageName].AgentHasHash)
 					assert.Equal(t, packageStatuses.Packages[collectorPackageName].AgentHasVersion, status.Packages[collectorPackageName].AgentHasVersion)
 				})
+				// This will be called within the goroutine that is spun up from the main function.
 				mockOpAmpClient.On("SetPackageStatuses", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 					status := args.Get(0).(*protobufs.PackageStatuses)
 					assert.NotNil(t, status)
@@ -1337,8 +1341,8 @@ func TestClient_onPackagesAvailableHandler(t *testing.T) {
 				}
 
 				err := c.onPackagesAvailableHandler(packagesAvailableNew)
-				wg.Wait()
 				assert.NoError(t, err)
+				assert.Eventually(t, func() bool { return c.safeGetUpdatingPackage() == false }, 10*time.Second, 10*time.Millisecond)
 			},
 		},
 		{
