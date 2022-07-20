@@ -14,21 +14,19 @@
 //
 // go:build !windows
 
-package observiq
+package packagestate
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/observiq/observiq-otel-collector/internal/version"
 	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 )
 
-func TestLastReportedStatusesLinux(t *testing.T) {
-	pkgName := mainPackageName
+func TestLoadStatusesLinux(t *testing.T) {
 	testCases := []struct {
 		desc     string
 		testFunc func(*testing.T)
@@ -40,24 +38,15 @@ func TestLastReportedStatusesLinux(t *testing.T) {
 				cantReadJSON := filepath.Join(tmpDir, "noread.json")
 				os.WriteFile(cantReadJSON, nil, 0000)
 				logger := zap.NewNop()
-				p := &packagesStateProvider{
+				p := &FileStateManager{
 					logger:   logger,
 					jsonPath: cantReadJSON,
 				}
 
-				actual, err := p.LastReportedStatuses()
+				actual, err := p.LoadStatuses()
 
 				assert.ErrorContains(t, err, "failed to read package statuses json:")
-				assert.Nil(t, actual.ServerProvidedAllPackagesHash)
-				assert.Equal(t, "", actual.ErrorMessage)
-				assert.Equal(t, 1, len(actual.Packages))
-				assert.Equal(t, pkgName, actual.Packages[pkgName].GetName())
-				assert.Equal(t, version.Version(), actual.Packages[pkgName].GetAgentHasVersion())
-				assert.Nil(t, actual.Packages[pkgName].GetAgentHasHash())
-				assert.Equal(t, "", actual.Packages[pkgName].GetServerOfferedVersion())
-				assert.Nil(t, actual.Packages[pkgName].GetServerOfferedHash())
-				assert.Equal(t, protobufs.PackageStatus_Installed, actual.Packages[pkgName].GetStatus())
-				assert.Equal(t, "", actual.Packages[pkgName].GetErrorMessage())
+				assert.Nil(t, actual)
 			},
 		},
 	}
@@ -67,7 +56,7 @@ func TestLastReportedStatusesLinux(t *testing.T) {
 	}
 }
 
-func TestSetLastReportedStatusesLinux(t *testing.T) {
+func TestSaveStatusesLinux(t *testing.T) {
 	testCases := []struct {
 		desc     string
 		testFunc func(*testing.T)
@@ -79,7 +68,7 @@ func TestSetLastReportedStatusesLinux(t *testing.T) {
 				os.Chmod(tmpDir, 0400)
 				testJSON := filepath.Join(tmpDir, "test.json")
 				logger := zap.NewNop()
-				p := &packagesStateProvider{
+				p := &FileStateManager{
 					logger:   logger,
 					jsonPath: testJSON,
 				}
@@ -88,7 +77,7 @@ func TestSetLastReportedStatusesLinux(t *testing.T) {
 					ServerProvidedAllPackagesHash: []byte("hash"),
 				}
 
-				err := p.SetLastReportedStatuses(packageStatuses)
+				err := p.SaveStatuses(packageStatuses)
 
 				assert.ErrorContains(t, err, "failed to write package statuses json:")
 

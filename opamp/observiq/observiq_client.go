@@ -26,6 +26,7 @@ import (
 	"github.com/observiq/observiq-otel-collector/collector"
 	"github.com/observiq/observiq-otel-collector/internal/version"
 	"github.com/observiq/observiq-otel-collector/opamp"
+	"github.com/observiq/observiq-otel-collector/packagestate"
 	"github.com/open-telemetry/opamp-go/client"
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -39,9 +40,6 @@ var (
 
 // Ensure interface is satisfied
 var _ opamp.Client = (*Client)(nil)
-
-// mainPackageName is the name for the top level packages for this collector
-const mainPackageName = "observiq-otel-collector"
 
 // Client represents a client that is connected to Iris via OpAmp
 type Client struct {
@@ -214,7 +212,7 @@ func (c *Client) onConnectHandler() {
 		return
 	}
 
-	lastMainPackageStatus := lastPackageStatuses.Packages[mainPackageName]
+	lastMainPackageStatus := lastPackageStatuses.Packages[packagestate.CollectorPackageName]
 	// If in the middle of an install and we just connected, this is most likely becasue the collector was just spun up fresh by the Updater.
 	// If the current version matches the server offered version, this implies a good install and so we should set the PackageStatuses and
 	// send it to the OpAMP Server. If the version does not match, just change the PackageStatues JSON so that the Updater can start rollback.
@@ -342,7 +340,7 @@ func (c *Client) onPackagesAvailableHandler(packagesAvailable *protobufs.Package
 	}
 
 	// Start update if applicable
-	collectorDownloadableFile := curPackageFiles[mainPackageName]
+	collectorDownloadableFile := curPackageFiles[packagestate.CollectorPackageName]
 	if collectorDownloadableFile != nil {
 		c.safeSetUpdatingPackage(true)
 		go c.installPackageFromFile(collectorDownloadableFile, curPackageStatuses)
@@ -361,7 +359,7 @@ func (c *Client) createPackageMaps(
 	for name, availPkg := range pkgAvailMap {
 		switch name {
 		// If it's an expected package, return an installing status
-		case mainPackageName:
+		case packagestate.CollectorPackageName:
 			var agentHash []byte
 			if lastPkgStatusMap != nil && lastPkgStatusMap[name] != nil {
 				if lastPkgStatusMap[name].GetAgentHasVersion() != version.Version() {
@@ -419,9 +417,9 @@ func (c *Client) createPackageMaps(
 func (c *Client) installPackageFromFile(file *protobufs.DownloadableFile, curPackageStatuses *protobufs.PackageStatuses) {
 	if fileManagerErr := c.downloadableFileManager.FetchAndExtractArchive(file); fileManagerErr != nil {
 		// Change existing status to show that install failed and get ready to send
-		curPackageStatuses.Packages[mainPackageName].Status = protobufs.PackageStatus_InstallFailed
-		curPackageStatuses.Packages[mainPackageName].ErrorMessage =
-			fmt.Sprintf("Failed to download and verify package %s's downloadable file", mainPackageName)
+		curPackageStatuses.Packages[packagestate.CollectorPackageName].Status = protobufs.PackageStatus_InstallFailed
+		curPackageStatuses.Packages[packagestate.CollectorPackageName].ErrorMessage =
+			fmt.Sprintf("Failed to download and verify package %s's downloadable file", packagestate.CollectorPackageName)
 
 		if err := c.packagesStateProvider.SetLastReportedStatuses(curPackageStatuses); err != nil {
 			c.logger.Error("Failed to save last reported package statuses", zap.Error(err))
@@ -454,7 +452,7 @@ func (c *Client) attemptFailedInstall(errMsg string) {
 		return
 	}
 
-	lastMainPackageStatus := lastPackageStatuses.Packages[mainPackageName]
+	lastMainPackageStatus := lastPackageStatuses.Packages[packagestate.CollectorPackageName]
 	lastMainPackageStatus.Status = protobufs.PackageStatus_InstallFailed
 	lastMainPackageStatus.ErrorMessage = errMsg
 
@@ -471,12 +469,12 @@ func (c *Client) getMainPackageInstallingLastStatuses() *protobufs.PackageStatus
 	}
 
 	// If we have no info on our main package, nothing else to do
-	if lastPackageStatuses == nil || lastPackageStatuses.Packages == nil || lastPackageStatuses.Packages[mainPackageName] == nil {
+	if lastPackageStatuses == nil || lastPackageStatuses.Packages == nil || lastPackageStatuses.Packages[packagestate.CollectorPackageName] == nil {
 		c.logger.Warn("Failed to retrieve last reported package statuses for main package")
 		return nil
 	}
 
-	lastMainPackageStatus := lastPackageStatuses.Packages[mainPackageName]
+	lastMainPackageStatus := lastPackageStatuses.Packages[packagestate.CollectorPackageName]
 
 	// If we were not installing before the connection, nothing else to do
 	if lastMainPackageStatus.Status != protobufs.PackageStatus_Installing {

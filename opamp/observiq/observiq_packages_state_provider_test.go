@@ -16,13 +16,14 @@ package observiq
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"io"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/observiq/observiq-otel-collector/internal/version"
+	"github.com/observiq/observiq-otel-collector/packagestate"
+	"github.com/observiq/observiq-otel-collector/packagestate/mocks"
 	"github.com/open-telemetry/opamp-go/client/types"
 	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/stretchr/testify/assert"
@@ -285,19 +286,20 @@ func TestDeletePackage(t *testing.T) {
 }
 
 func TestLastReportedStatuses(t *testing.T) {
-	pkgName := mainPackageName
+	pkgName := packagestate.CollectorPackageName
 	testCases := []struct {
 		desc     string
 		testFunc func(*testing.T)
 	}{
 		{
-			desc: "File doesn't exist",
+			desc: "PackageStateManager returns error for missing file",
 			testFunc: func(t *testing.T) {
-				noExistJSON := "garbage.json"
-				logger := zap.NewNop()
+				mockManager := mocks.NewMockStateManager(t)
+				mockManager.On("LoadStatuses").Return(nil, os.ErrNotExist)
+
 				p := &packagesStateProvider{
-					logger:   logger,
-					jsonPath: noExistJSON,
+					packageStateManager: mockManager,
+					logger:              zap.NewNop(),
 				}
 
 				actual, err := p.LastReportedStatuses()
@@ -316,18 +318,20 @@ func TestLastReportedStatuses(t *testing.T) {
 			},
 		},
 		{
-			desc: "Bad json file",
+			desc: "Load Error",
 			testFunc: func(t *testing.T) {
-				badJSON := "testdata/package_statuses_bad.json"
-				logger := zap.NewNop()
+				expectedErr := errors.New("bad")
+				mockManager := mocks.NewMockStateManager(t)
+				mockManager.On("LoadStatuses").Return(nil, expectedErr)
+
 				p := &packagesStateProvider{
-					logger:   logger,
-					jsonPath: badJSON,
+					packageStateManager: mockManager,
+					logger:              zap.NewNop(),
 				}
 
 				actual, err := p.LastReportedStatuses()
 
-				assert.ErrorContains(t, err, "failed to unmarshal package statuses:")
+				assert.ErrorIs(t, err, expectedErr)
 				assert.Nil(t, actual.ServerProvidedAllPackagesHash)
 				assert.Equal(t, "", actual.ErrorMessage)
 				assert.Equal(t, 1, len(actual.Packages))
@@ -341,36 +345,36 @@ func TestLastReportedStatuses(t *testing.T) {
 			},
 		},
 		{
-			desc: "Good json file",
+			desc: "Successful file read",
 			testFunc: func(t *testing.T) {
-				badJSON := "testdata/package_statuses_good.json"
-				pkgName := "package"
-				agentVersion := "1.0"
-				agentHash := []byte("hash1")
-				serverVersion := "2.0"
-				serverHash := []byte("hash2")
-				errMsg := "bad"
-				allHash := []byte("hash")
-				allErrMsg := "whoops"
-				logger := zap.NewNop()
+				expected := &protobufs.PackageStatuses{
+					Packages: map[string]*protobufs.PackageStatus{
+						"package": {
+							Name:                 "package",
+							AgentHasVersion:      "1.0",
+							AgentHasHash:         []byte("hash1"),
+							ServerOfferedVersion: "2.0",
+							ServerOfferedHash:    []byte("hash2"),
+							Status:               protobufs.PackageStatus_InstallPending,
+							ErrorMessage:         "bad",
+						},
+					},
+					ServerProvidedAllPackagesHash: []byte("hash"),
+					ErrorMessage:                  "whoops",
+				}
+
+				mockManager := mocks.NewMockStateManager(t)
+				mockManager.On("LoadStatuses").Return(expected, nil)
+
 				p := &packagesStateProvider{
-					logger:   logger,
-					jsonPath: badJSON,
+					packageStateManager: mockManager,
+					logger:              zap.NewNop(),
 				}
 
 				actual, err := p.LastReportedStatuses()
 
 				assert.NoError(t, err)
-				assert.Equal(t, allHash, actual.ServerProvidedAllPackagesHash)
-				assert.Equal(t, allErrMsg, actual.ErrorMessage)
-				assert.Equal(t, 1, len(actual.Packages))
-				assert.Equal(t, pkgName, actual.Packages[pkgName].GetName())
-				assert.Equal(t, agentVersion, actual.Packages[pkgName].GetAgentHasVersion())
-				assert.Equal(t, agentHash, actual.Packages[pkgName].GetAgentHasHash())
-				assert.Equal(t, serverVersion, actual.Packages[pkgName].GetServerOfferedVersion())
-				assert.Equal(t, serverHash, actual.Packages[pkgName].GetServerOfferedHash())
-				assert.Equal(t, protobufs.PackageStatus_InstallPending, actual.Packages[pkgName].GetStatus())
-				assert.Equal(t, errMsg, actual.Packages[pkgName].GetErrorMessage())
+				assert.Equal(t, expected, actual)
 			},
 		},
 	}
@@ -394,101 +398,67 @@ func TestSetLastReportedStatuses(t *testing.T) {
 		testFunc func(*testing.T)
 	}{
 		{
-			desc: "New file",
+			desc: "PackageStateManager Returns error",
 			testFunc: func(t *testing.T) {
-				tmpDir := t.TempDir()
-				testJSON := filepath.Join(tmpDir, "test.json")
-				logger := zap.NewNop()
-				p := &packagesStateProvider{
-					logger:   logger,
-					jsonPath: testJSON,
-				}
+				expectedErr := errors.New("bad")
 
-				packages := map[string]*protobufs.PackageStatus{
-					pkgName: {
-						Name:                 pkgName,
-						AgentHasVersion:      agentVersion,
-						AgentHasHash:         agentHash,
-						ServerOfferedVersion: serverVersion,
-						ServerOfferedHash:    serverHash,
-						Status:               protobufs.PackageStatus_InstallPending,
-						ErrorMessage:         errMsg,
-					},
-				}
 				packageStatuses := &protobufs.PackageStatuses{
 					ServerProvidedAllPackagesHash: allHash,
 					ErrorMessage:                  allErrMsg,
-					Packages:                      packages,
+					Packages: map[string]*protobufs.PackageStatus{
+						pkgName: {
+							Name:                 pkgName,
+							AgentHasVersion:      agentVersion,
+							AgentHasHash:         agentHash,
+							ServerOfferedVersion: serverVersion,
+							ServerOfferedHash:    serverHash,
+							Status:               protobufs.PackageStatus_InstallPending,
+							ErrorMessage:         errMsg,
+						},
+					},
+				}
+
+				mockManager := mocks.NewMockStateManager(t)
+				mockManager.On("SaveStatuses", packageStatuses).Return(expectedErr)
+
+				p := &packagesStateProvider{
+					packageStateManager: mockManager,
+					logger:              zap.NewNop(),
 				}
 
 				err := p.SetLastReportedStatuses(packageStatuses)
-				assert.NoError(t, err)
-
-				bytes, err := os.ReadFile(testJSON)
-				assert.NoError(t, err)
-				var fileStates packageStates
-				err = json.Unmarshal(bytes, &fileStates)
-				assert.NoError(t, err)
-				assert.Equal(t, allHash, fileStates.AllPackagesHash)
-				assert.Equal(t, allErrMsg, fileStates.AllErrorMessage)
-				assert.Equal(t, 1, len(fileStates.PackageStates))
-				assert.Equal(t, pkgName, fileStates.PackageStates[pkgName].Name)
-				assert.Equal(t, agentVersion, fileStates.PackageStates[pkgName].AgentVersion)
-				assert.Equal(t, agentHash, fileStates.PackageStates[pkgName].AgentHash)
-				assert.Equal(t, serverVersion, fileStates.PackageStates[pkgName].ServerVersion)
-				assert.Equal(t, serverHash, fileStates.PackageStates[pkgName].ServerHash)
-				assert.Equal(t, protobufs.PackageStatus_InstallPending, fileStates.PackageStates[pkgName].Status)
-				assert.Equal(t, errMsg, fileStates.PackageStates[pkgName].ErrorMessage)
+				assert.ErrorIs(t, err, expectedErr)
 			},
 		},
 		{
-			desc: "Existing file",
+			desc: "PackageStateManager No error",
 			testFunc: func(t *testing.T) {
-				tmpDir := t.TempDir()
-				testJSON := filepath.Join(tmpDir, "test.json")
-				os.WriteFile(testJSON, nil, 0600)
-
-				logger := zap.NewNop()
-				p := &packagesStateProvider{
-					logger:   logger,
-					jsonPath: testJSON,
-				}
-
-				packages := map[string]*protobufs.PackageStatus{
-					pkgName: {
-						Name:                 pkgName,
-						AgentHasVersion:      agentVersion,
-						AgentHasHash:         agentHash,
-						ServerOfferedVersion: serverVersion,
-						ServerOfferedHash:    serverHash,
-						Status:               protobufs.PackageStatus_InstallPending,
-						ErrorMessage:         errMsg,
-					},
-				}
 				packageStatuses := &protobufs.PackageStatuses{
 					ServerProvidedAllPackagesHash: allHash,
 					ErrorMessage:                  allErrMsg,
-					Packages:                      packages,
+					Packages: map[string]*protobufs.PackageStatus{
+						pkgName: {
+							Name:                 pkgName,
+							AgentHasVersion:      agentVersion,
+							AgentHasHash:         agentHash,
+							ServerOfferedVersion: serverVersion,
+							ServerOfferedHash:    serverHash,
+							Status:               protobufs.PackageStatus_InstallPending,
+							ErrorMessage:         errMsg,
+						},
+					},
+				}
+
+				mockManager := mocks.NewMockStateManager(t)
+				mockManager.On("SaveStatuses", packageStatuses).Return(nil)
+
+				p := &packagesStateProvider{
+					packageStateManager: mockManager,
+					logger:              zap.NewNop(),
 				}
 
 				err := p.SetLastReportedStatuses(packageStatuses)
 				assert.NoError(t, err)
-
-				bytes, err := os.ReadFile(testJSON)
-				assert.NoError(t, err)
-				var fileStates packageStates
-				err = json.Unmarshal(bytes, &fileStates)
-				assert.NoError(t, err)
-				assert.Equal(t, allHash, fileStates.AllPackagesHash)
-				assert.Equal(t, allErrMsg, fileStates.AllErrorMessage)
-				assert.Equal(t, 1, len(fileStates.PackageStates))
-				assert.Equal(t, pkgName, fileStates.PackageStates[pkgName].Name)
-				assert.Equal(t, agentVersion, fileStates.PackageStates[pkgName].AgentVersion)
-				assert.Equal(t, agentHash, fileStates.PackageStates[pkgName].AgentHash)
-				assert.Equal(t, serverVersion, fileStates.PackageStates[pkgName].ServerVersion)
-				assert.Equal(t, serverHash, fileStates.PackageStates[pkgName].ServerHash)
-				assert.Equal(t, protobufs.PackageStatus_InstallPending, fileStates.PackageStates[pkgName].Status)
-				assert.Equal(t, errMsg, fileStates.PackageStates[pkgName].ErrorMessage)
 			},
 		},
 	}

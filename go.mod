@@ -6,6 +6,7 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-collector v0.0.3-0.20220711143229-08f2752ed367
 	github.com/google/uuid v1.3.0
 	github.com/observiq/observiq-otel-collector/exporter/googlecloudexporter v1.3.0
+	github.com/observiq/observiq-otel-collector/packagestate v0.0.0
 	github.com/observiq/observiq-otel-collector/processor/resourceattributetransposerprocessor v1.3.0
 	github.com/observiq/observiq-otel-collector/receiver/pluginreceiver v1.3.0
 	github.com/open-telemetry/opamp-go v0.2.0
@@ -470,3 +471,5 @@ replace github.com/observiq/observiq-otel-collector/processor/resourceattributet
 replace github.com/observiq/observiq-otel-collector/receiver/pluginreceiver => ./receiver/pluginreceiver
 
 replace github.com/observiq/observiq-otel-collector/exporter/googlecloudexporter => ./exporter/googlecloudexporter
+
+replace github.com/observiq/observiq-otel-collector/packagestate => ./packagestate

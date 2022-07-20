@@ -28,3 +28,4 @@ exceptions:
     - path: "./processor/resourceattributetransposerprocessor"
     - path: "./receiver/pluginreceiver"
     - path: "./exporter/googlecloudexporter"
+    - path: "./packagestate"
