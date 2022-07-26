@@ -81,7 +81,7 @@ func NewClient(args *NewClientArgs) (opamp.Client, error) {
 		downloadableFileManager: newDownloadableFileManager(clientLogger, args.TmpPath),
 		collector:               args.Collector,
 		currentConfig:           args.Config,
-		packagesStateProvider:   newPackagesStateProvider(clientLogger, "package_statuses.json"),
+		packagesStateProvider:   newPackagesStateProvider(clientLogger, packagestate.DefaultFileName),
 	}
 
 	// Parse URL to determin scheme

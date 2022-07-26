@@ -14,7 +14,7 @@
 
 //go:build darwin && integration
 
-package install
+package service
 
 import (
 	"os"
@@ -23,6 +23,7 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/observiq/observiq-otel-collector/updater/internal/path"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,14 +38,14 @@ func TestDarwinServiceInstall(t *testing.T) {
 			installedServiceFilePath: installedServicePath,
 		}
 
-		err := d.Install()
+		err := d.install()
 		require.NoError(t, err)
 		require.FileExists(t, installedServicePath)
 
 		// We want to check that the service was actually loaded
 		requireServiceLoadedStatus(t, true)
 
-		err = d.Uninstall()
+		err = d.uninstall()
 		require.NoError(t, err)
 		require.NoFileExists(t, installedServicePath)
 
@@ -63,7 +64,7 @@ func TestDarwinServiceInstall(t *testing.T) {
 			installedServiceFilePath: installedServicePath,
 		}
 
-		err := d.Install()
+		err := d.install()
 		require.NoError(t, err)
 		require.FileExists(t, installedServicePath)
 
@@ -80,7 +81,7 @@ func TestDarwinServiceInstall(t *testing.T) {
 
 		requireServiceLoadedStatus(t, false)
 
-		err = d.Uninstall()
+		err = d.uninstall()
 		require.NoError(t, err)
 		require.NoFileExists(t, installedServicePath)
 
@@ -98,7 +99,7 @@ func TestDarwinServiceInstall(t *testing.T) {
 			installedServiceFilePath: installedServicePath,
 		}
 
-		err := d.Install()
+		err := d.install()
 		require.ErrorContains(t, err, "failed to open input file")
 		requireServiceLoadedStatus(t, false)
 	})
@@ -113,7 +114,7 @@ func TestDarwinServiceInstall(t *testing.T) {
 			installedServiceFilePath: installedServicePath,
 		}
 
-		err := d.Install()
+		err := d.install()
 		require.ErrorContains(t, err, "failed to write service file")
 		requireServiceLoadedStatus(t, false)
 	})
@@ -128,7 +129,7 @@ func TestDarwinServiceInstall(t *testing.T) {
 			installedServiceFilePath: installedServicePath,
 		}
 
-		err := d.Uninstall()
+		err := d.uninstall()
 		require.ErrorContains(t, err, "failed to stat installed service file")
 		requireServiceLoadedStatus(t, false)
 	})
@@ -159,6 +160,87 @@ func TestDarwinServiceInstall(t *testing.T) {
 
 		err := d.Stop()
 		require.ErrorContains(t, err, "failed to stat installed service file")
+	})
+
+	t.Run("Backup installed service succeeds", func(t *testing.T) {
+		installedServicePath := filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", "darwin-service.plist")
+
+		uninstallService(t, installedServicePath)
+
+		newServiceFile := filepath.Join("testdata", "darwin-service.plist")
+		serviceFileContents, err := os.ReadFile(newServiceFile)
+		require.NoError(t, err)
+
+		d := &darwinService{
+			newServiceFilePath:       newServiceFile,
+			installedServiceFilePath: installedServicePath,
+		}
+
+		err = d.install()
+		require.NoError(t, err)
+		require.FileExists(t, installedServicePath)
+
+		// We want to check that the service was actually loaded
+		requireServiceLoadedStatus(t, true)
+
+		require.NoError(t, d.Stop())
+
+		backupServiceDir := t.TempDir()
+		err = d.Backup(backupServiceDir)
+		require.NoError(t, err)
+		require.FileExists(t, path.BackupServiceFile(backupServiceDir))
+
+		backupServiceContents, err := os.ReadFile(path.BackupServiceFile(backupServiceDir))
+
+		require.Equal(t, serviceFileContents, backupServiceContents)
+		require.NoError(t, d.uninstall())
+	})
+
+	t.Run("Backup installed service fails if not installed", func(t *testing.T) {
+		installedServicePath := filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", "darwin-service.plist")
+
+		uninstallService(t, installedServicePath)
+
+		newServiceFile := filepath.Join("testdata", "darwin-service.plist")
+
+		d := &darwinService{
+			newServiceFilePath:       newServiceFile,
+			installedServiceFilePath: installedServicePath,
+		}
+
+		backupServiceDir := t.TempDir()
+		err := d.Backup(backupServiceDir)
+		require.ErrorContains(t, err, "failed to copy service file")
+	})
+
+	t.Run("Backup installed service fails if output file already exists", func(t *testing.T) {
+		installedServicePath := filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", "darwin-service.plist")
+
+		uninstallService(t, installedServicePath)
+
+		newServiceFile := filepath.Join("testdata", "darwin-service.plist")
+
+		d := &darwinService{
+			newServiceFilePath:       newServiceFile,
+			installedServiceFilePath: installedServicePath,
+		}
+
+		err := d.install()
+		require.NoError(t, err)
+		require.FileExists(t, installedServicePath)
+
+		// We want to check that the service was actually loaded
+		requireServiceLoadedStatus(t, true)
+
+		require.NoError(t, d.Stop())
+
+		backupServiceDir := t.TempDir()
+		// Write the backup file before creating it; Backup should
+		// not ever overwrite an existing file
+		os.WriteFile(path.BackupServiceFile(backupServiceDir), []byte("file exists"), 0600)
+
+		err = d.Backup(backupServiceDir)
+		require.ErrorContains(t, err, "failed to copy service file")
 	})
 }
 

@@ -16,11 +16,15 @@ package install
 
 import (
 	"fmt"
-	"io"
 	"io/fs"
-	"log"
 	"os"
 	"path/filepath"
+
+	"github.com/observiq/observiq-otel-collector/updater/internal/action"
+	"github.com/observiq/observiq-otel-collector/updater/internal/file"
+	"github.com/observiq/observiq-otel-collector/updater/internal/path"
+	"github.com/observiq/observiq-otel-collector/updater/internal/rollback"
+	"github.com/observiq/observiq-otel-collector/updater/internal/service"
 )
 
 // Installer allows you to install files from latestDir into installDir,
@@ -28,60 +32,60 @@ import (
 type Installer struct {
 	latestDir  string
 	installDir string
-	svc        Service
+	tmpDir     string
+	svc        service.Service
 }
 
 // NewInstaller returns a new instance of an Installer.
-func NewInstaller(tempDir string) (*Installer, error) {
-	latestDir := filepath.Join(tempDir, "latest")
-	installDirPath, err := installDir()
+func NewInstaller(tmpDir string) (*Installer, error) {
+	latestDir := path.LatestDirFromTempDir(tmpDir)
+	installDirPath, err := path.InstallDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to determine install dir: %w", err)
 	}
 
 	return &Installer{
 		latestDir:  latestDir,
-		svc:        newService(latestDir),
+		svc:        service.NewService(latestDir),
 		installDir: installDirPath,
+		tmpDir:     tmpDir,
 	}, nil
 }
 
-// Install installs the unpacked artifacts in latestDirPath to installDirPath,
-// as well as installing the new service file using the provided Service interface
-func (i Installer) Install() error {
+// Install installs the unpacked artifacts in latestDir to installDir,
+// as well as installing the new service file using the installer's Service interface
+func (i Installer) Install(rb rollback.ActionAppender) error {
 	// Stop service
 	if err := i.svc.Stop(); err != nil {
 		return fmt.Errorf("failed to stop service: %w", err)
 	}
+	rb.AppendAction(action.NewServiceStopAction(i.svc))
 
 	// install files that go to installDirPath to their correct location,
 	// excluding any config files (logging.yaml, config.yaml, manager.yaml)
-	if err := moveFiles(i.latestDir, i.installDir); err != nil {
+	if err := copyFiles(i.latestDir, i.installDir, i.tmpDir, rb); err != nil {
 		return fmt.Errorf("failed to install new files: %w", err)
 	}
 
-	// Uninstall previous service
-	if err := i.svc.Uninstall(); err != nil {
-		return fmt.Errorf("failed to uninstall service: %w", err)
+	// Update old service config to new service config
+	if err := i.svc.Update(); err != nil {
+		return fmt.Errorf("failed to update service: %w", err)
 	}
-
-	// Install new service
-	if err := i.svc.Install(); err != nil {
-		return fmt.Errorf("failed to install service: %w", err)
-	}
+	rb.AppendAction(action.NewServiceUpdateAction(i.tmpDir))
 
 	// Start service
 	if err := i.svc.Start(); err != nil {
 		return fmt.Errorf("failed to start service: %w", err)
 	}
+	rb.AppendAction(action.NewServiceStartAction(i.svc))
 
 	return nil
 }
 
-// moveFiles moves the file tree rooted at latestDirPath to installDirPath,
-// skipping configuration files
-func moveFiles(latestDirPath, installDirPath string) error {
-	err := filepath.WalkDir(latestDirPath, func(path string, d fs.DirEntry, err error) error {
+// copyFiles moves the file tree rooted at latestDirPath to installDirPath,
+// skipping configuration files. Appends CopyFileAction-s to the Rollbacker as it copies file.
+func copyFiles(inputPath, outputPath, tmpDir string, rb rollback.ActionAppender) error {
+	err := filepath.WalkDir(inputPath, func(inPath string, d fs.DirEntry, err error) error {
 		switch {
 		case err != nil:
 			// if there was an error walking the directory, we want to bail out.
@@ -89,55 +93,40 @@ func moveFiles(latestDirPath, installDirPath string) error {
 		case d.IsDir():
 			// Skip directories, we'll create them when we get a file in the directory.
 			return nil
-		case skipFile(path):
+		case skipConfigFiles(inPath):
 			// Found a config file that we should skip copying.
 			return nil
 		}
 
-		cleanPath := filepath.Clean(path)
-
 		// We want the path relative to the directory we are walking in order to calculate where the file should be
 		// mirrored in the destination directory.
-		relPath, err := filepath.Rel(latestDirPath, cleanPath)
+		relPath, err := filepath.Rel(inputPath, inPath)
 		if err != nil {
 			return err
 		}
 
 		// use the relative path to get the outPath (where we should write the file), and
 		// to get the out directory (which we will create if it does not exist).
-		outPath := filepath.Clean(filepath.Join(installDirPath, relPath))
+		outPath := filepath.Join(outputPath, relPath)
 		outDir := filepath.Dir(outPath)
 
 		if err := os.MkdirAll(outDir, 0750); err != nil {
 			return fmt.Errorf("failed to create dir: %w", err)
 		}
 
-		// Open the output file, creating it if it does not exist and truncating it.
-		outFile, err := os.OpenFile(outPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+		// We create the action record here, because we want to record whether the file exists or not before
+		// we open the file (which will end up creating the file).
+		cfa, err := action.NewCopyFileAction(relPath, outPath, tmpDir)
 		if err != nil {
-			return fmt.Errorf("failed to open output file: %w", err)
+			return fmt.Errorf("failed to create copy file action: %w", err)
 		}
-		defer func() {
-			err := outFile.Close()
-			if err != nil {
-				log.Default().Printf("installFiles: Failed to close output file: %s", err)
-			}
-		}()
 
-		// Open the input file for reading.
-		inFile, err := os.Open(cleanPath)
-		if err != nil {
-			return fmt.Errorf("failed to open input file: %w", err)
-		}
-		defer func() {
-			err := inFile.Close()
-			if err != nil {
-				log.Default().Printf("installFiles: Failed to close input file: %s", err)
-			}
-		}()
+		// Record that we are performing copying the file.
+		// We record before we actually do the action here because the file may be partially written,
+		// and we will want to roll that back if that is the case.
+		rb.AppendAction(cfa)
 
-		// Copy the input file to the output file.
-		if _, err := io.Copy(outFile, inFile); err != nil {
+		if err := file.CopyFile(inPath, outPath, true); err != nil {
 			return fmt.Errorf("failed to copy file: %w", err)
 		}
 
@@ -151,9 +140,9 @@ func moveFiles(latestDirPath, installDirPath string) error {
 	return nil
 }
 
-// skipFile returns true if the given path is a special config file.
+// skipConfigFiles returns true if the given path is a special config file.
 // These files should not be overwritten.
-func skipFile(path string) bool {
+func skipConfigFiles(path string) bool {
 	var configFiles = []string{
 		"config.yaml",
 		"logging.yaml",

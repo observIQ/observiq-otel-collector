@@ -14,27 +14,45 @@
 
 //go:build darwin
 
-package install
+package service
 
 import (
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/observiq/observiq-otel-collector/updater/internal/file"
+	"github.com/observiq/observiq-otel-collector/updater/internal/path"
 )
 
 const (
 	darwinServiceFilePath = "/Library/LaunchDaemons/com.observiq.collector.plist"
-	darwinInstallDir      = "/opt/observiq-otel-collector"
 )
 
-// newService returns an instance of the Service interface for managing the observiq-otel-collector service on the current OS.
-func newService(latestPath string) Service {
-	return &darwinService{
-		newServiceFilePath:       filepath.Join(latestPath, "install", "com.observiq.collector.plist"),
-		installedServiceFilePath: darwinServiceFilePath,
-		installDir:               darwinInstallDir,
+// Option is an extra option for creating a Service
+type Option func(darwinSvc *darwinService)
+
+// WithServiceFile returns an option setting the service file to use when updating using the service
+func WithServiceFile(svcFilePath string) Option {
+	return func(darwinSvc *darwinService) {
+		darwinSvc.newServiceFilePath = svcFilePath
 	}
+}
+
+// NewService returns an instance of the Service interface for managing the observiq-otel-collector service on the current OS.
+func NewService(latestPath string, opts ...Option) Service {
+	darwinSvc := &darwinService{
+		newServiceFilePath:       filepath.Join(path.ServiceFileDir(latestPath), "com.observiq.collector.plist"),
+		installedServiceFilePath: darwinServiceFilePath,
+		installDir:               path.DarwinInstallDir,
+	}
+
+	for _, opt := range opts {
+		opt(darwinSvc)
+	}
+
+	return darwinSvc
 }
 
 type darwinService struct {
@@ -79,7 +97,7 @@ func (d darwinService) Stop() error {
 }
 
 // Installs the service
-func (d darwinService) Install() error {
+func (d darwinService) install() error {
 	serviceFileBytes, err := os.ReadFile(d.newServiceFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to open input file: %w", err)
@@ -94,8 +112,7 @@ func (d darwinService) Install() error {
 }
 
 // Uninstalls the service
-func (d darwinService) Uninstall() error {
-	//#nosec G204 -- installedServiceFilePath is not determined by user input
+func (d darwinService) uninstall() error {
 	if err := d.Stop(); err != nil {
 		return err
 	}
@@ -107,7 +124,22 @@ func (d darwinService) Uninstall() error {
 	return nil
 }
 
-// InstallDir returns the filepath to the install directory
-func installDir() (string, error) {
-	return darwinInstallDir, nil
+func (d darwinService) Update() error {
+	if err := d.uninstall(); err != nil {
+		return fmt.Errorf("failed to uninstall old service: %w", err)
+	}
+
+	if err := d.install(); err != nil {
+		return fmt.Errorf("failed to install new service: %w", err)
+	}
+
+	return nil
+}
+
+func (d darwinService) Backup(outDir string) error {
+	if err := file.CopyFile(d.installedServiceFilePath, path.BackupServiceFile(outDir), false); err != nil {
+		return fmt.Errorf("failed to copy service file: %w", err)
+	}
+
+	return nil
 }

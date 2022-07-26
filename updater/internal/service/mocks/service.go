@@ -9,13 +9,13 @@ type Service struct {
 	mock.Mock
 }
 
-// Install provides a mock function with given fields:
-func (_m *Service) Install() error {
-	ret := _m.Called()
+// Backup provides a mock function with given fields: outDir
+func (_m *Service) Backup(outDir string) error {
+	ret := _m.Called(outDir)
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func() error); ok {
-		r0 = rf()
+	if rf, ok := ret.Get(0).(func(string) error); ok {
+		r0 = rf(outDir)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -51,8 +51,8 @@ func (_m *Service) Stop() error {
 	return r0
 }
 
-// Uninstall provides a mock function with given fields:
-func (_m *Service) Uninstall() error {
+// Update provides a mock function with given fields:
+func (_m *Service) Update() error {
 	ret := _m.Called()
 
 	var r0 error

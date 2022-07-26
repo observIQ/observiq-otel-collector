@@ -21,7 +21,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/observiq/observiq-otel-collector/updater/internal/install/mocks"
+	"github.com/observiq/observiq-otel-collector/updater/internal/action"
+	rb_mocks "github.com/observiq/observiq-otel-collector/updater/internal/rollback/mocks"
+	"github.com/observiq/observiq-otel-collector/updater/internal/service/mocks"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,6 +32,8 @@ func TestInstallArtifacts(t *testing.T) {
 	t.Run("Installs artifacts correctly", func(t *testing.T) {
 		outDir := t.TempDir()
 		svc := mocks.NewService(t)
+		rb := rb_mocks.NewActionAppender(t)
+
 		installer := &Installer{
 			latestDir:  filepath.Join("testdata", "example-install"),
 			installDir: outDir,
@@ -47,11 +52,16 @@ func TestInstallArtifacts(t *testing.T) {
 		require.NoError(t, err)
 
 		svc.On("Stop").Once().Return(nil)
-		svc.On("Uninstall").Once().Return(nil)
-		svc.On("Install").Once().Return(nil)
+		svc.On("Update").Once().Return(nil)
 		svc.On("Start").Once().Return(nil)
 
-		err = installer.Install()
+		actions := []action.RollbackableAction{}
+		rb.On("AppendAction", mock.Anything).Run(func(args mock.Arguments) {
+			action := args.Get(0).(action.RollbackableAction)
+			actions = append(actions, action)
+		})
+
+		err = installer.Install(rb)
 		require.NoError(t, err)
 
 		contentsEqual(t, outDirConfig, "# The original config file")
@@ -64,11 +74,36 @@ func TestInstallArtifacts(t *testing.T) {
 
 		contentsEqual(t, filepath.Join(outDir, "test.txt"), "This is a test file\n")
 		contentsEqual(t, filepath.Join(outDir, "test-folder", "another-test.txt"), "This is a nested text file\n")
+
+		copyTestTxtAction, err := action.NewCopyFileAction(
+			filepath.Join("test.txt"),
+			filepath.Join(installer.installDir, "test.txt"),
+			installer.tmpDir,
+		)
+		require.NoError(t, err)
+		copyTestTxtAction.FileCreated = true
+
+		copyNestedTestTxtAction, err := action.NewCopyFileAction(
+			filepath.Join("test-folder", "another-test.txt"),
+			filepath.Join(installer.installDir, "test-folder", "another-test.txt"),
+			installer.tmpDir,
+		)
+		require.NoError(t, err)
+		copyNestedTestTxtAction.FileCreated = true
+
+		require.Equal(t, []action.RollbackableAction{
+			action.NewServiceStopAction(svc),
+			copyNestedTestTxtAction,
+			copyTestTxtAction,
+			action.NewServiceUpdateAction(installer.tmpDir),
+			action.NewServiceStartAction(svc),
+		}, actions)
 	})
 
 	t.Run("Stop fails", func(t *testing.T) {
 		outDir := t.TempDir()
 		svc := mocks.NewService(t)
+		rb := rb_mocks.NewActionAppender(t)
 		installer := &Installer{
 			latestDir:  filepath.Join("testdata", "example-install"),
 			installDir: outDir,
@@ -77,13 +112,14 @@ func TestInstallArtifacts(t *testing.T) {
 
 		svc.On("Stop").Once().Return(errors.New("stop failed"))
 
-		err := installer.Install()
+		err := installer.Install(rb)
 		require.ErrorContains(t, err, "failed to stop service")
 	})
 
-	t.Run("Uninstall fails", func(t *testing.T) {
+	t.Run("Update fails", func(t *testing.T) {
 		outDir := t.TempDir()
 		svc := mocks.NewService(t)
+		rb := rb_mocks.NewActionAppender(t)
 		installer := &Installer{
 			latestDir:  filepath.Join("testdata", "example-install"),
 			installDir: outDir,
@@ -91,32 +127,43 @@ func TestInstallArtifacts(t *testing.T) {
 		}
 
 		svc.On("Stop").Once().Return(nil)
-		svc.On("Uninstall").Once().Return(errors.New("uninstall failed"))
+		svc.On("Update").Once().Return(errors.New("uninstall failed"))
 
-		err := installer.Install()
-		require.ErrorContains(t, err, "failed to uninstall service")
-	})
+		actions := []action.RollbackableAction{}
+		rb.On("AppendAction", mock.Anything).Run(func(args mock.Arguments) {
+			action := args.Get(0).(action.RollbackableAction)
+			actions = append(actions, action)
+		})
 
-	t.Run("Install fails", func(t *testing.T) {
-		outDir := t.TempDir()
-		svc := mocks.NewService(t)
-		installer := &Installer{
-			latestDir:  filepath.Join("testdata", "example-install"),
-			installDir: outDir,
-			svc:        svc,
-		}
+		err := installer.Install(rb)
+		require.ErrorContains(t, err, "failed to update service")
+		copyTestTxtAction, err := action.NewCopyFileAction(
+			filepath.Join("test.txt"),
+			filepath.Join(installer.installDir, "test.txt"),
+			installer.tmpDir,
+		)
+		require.NoError(t, err)
+		copyTestTxtAction.FileCreated = true
 
-		svc.On("Stop").Once().Return(nil)
-		svc.On("Uninstall").Once().Return(nil)
-		svc.On("Install").Once().Return(errors.New("install failed"))
+		copyNestedTestTxtAction, err := action.NewCopyFileAction(
+			filepath.Join("test-folder", "another-test.txt"),
+			filepath.Join(installer.installDir, "test-folder", "another-test.txt"),
+			installer.tmpDir,
+		)
+		require.NoError(t, err)
+		copyNestedTestTxtAction.FileCreated = true
 
-		err := installer.Install()
-		require.ErrorContains(t, err, "failed to install service")
+		require.Equal(t, []action.RollbackableAction{
+			action.NewServiceStopAction(svc),
+			copyNestedTestTxtAction,
+			copyTestTxtAction,
+		}, actions)
 	})
 
 	t.Run("Start fails", func(t *testing.T) {
 		outDir := t.TempDir()
 		svc := mocks.NewService(t)
+		rb := rb_mocks.NewActionAppender(t)
 		installer := &Installer{
 			latestDir:  filepath.Join("testdata", "example-install"),
 			installDir: outDir,
@@ -124,17 +171,46 @@ func TestInstallArtifacts(t *testing.T) {
 		}
 
 		svc.On("Stop").Once().Return(nil)
-		svc.On("Uninstall").Once().Return(nil)
-		svc.On("Install").Once().Return(nil)
+		svc.On("Update").Once().Return(nil)
 		svc.On("Start").Once().Return(errors.New("start failed"))
 
-		err := installer.Install()
+		actions := []action.RollbackableAction{}
+		rb.On("AppendAction", mock.Anything).Run(func(args mock.Arguments) {
+			action := args.Get(0).(action.RollbackableAction)
+			actions = append(actions, action)
+		})
+
+		err := installer.Install(rb)
 		require.ErrorContains(t, err, "failed to start service")
+
+		copyTestTxtAction, err := action.NewCopyFileAction(
+			filepath.Join("test.txt"),
+			filepath.Join(installer.installDir, "test.txt"),
+			installer.tmpDir,
+		)
+		require.NoError(t, err)
+		copyTestTxtAction.FileCreated = true
+
+		copyNestedTestTxtAction, err := action.NewCopyFileAction(
+			filepath.Join("test-folder", "another-test.txt"),
+			filepath.Join(installer.installDir, "test-folder", "another-test.txt"),
+			installer.tmpDir,
+		)
+		require.NoError(t, err)
+		copyNestedTestTxtAction.FileCreated = true
+
+		require.Equal(t, []action.RollbackableAction{
+			action.NewServiceStopAction(svc),
+			copyNestedTestTxtAction,
+			copyTestTxtAction,
+			action.NewServiceUpdateAction(installer.tmpDir),
+		}, actions)
 	})
 
 	t.Run("Latest dir does not exist", func(t *testing.T) {
 		outDir := t.TempDir()
 		svc := mocks.NewService(t)
+		rb := rb_mocks.NewActionAppender(t)
 		installer := &Installer{
 			latestDir:  filepath.Join("testdata", "non-existent-dir"),
 			installDir: outDir,
@@ -143,13 +219,24 @@ func TestInstallArtifacts(t *testing.T) {
 
 		svc.On("Stop").Once().Return(nil)
 
-		err := installer.Install()
+		actions := []action.RollbackableAction{}
+		rb.On("AppendAction", mock.Anything).Run(func(args mock.Arguments) {
+			action := args.Get(0).(action.RollbackableAction)
+			actions = append(actions, action)
+		})
+
+		err := installer.Install(rb)
 		require.ErrorContains(t, err, "failed to install new files")
+
+		require.Equal(t, []action.RollbackableAction{
+			action.NewServiceStopAction(svc),
+		}, actions)
 	})
 
 	t.Run("An artifact exists already as a folder", func(t *testing.T) {
 		outDir := t.TempDir()
 		svc := mocks.NewService(t)
+		rb := rb_mocks.NewActionAppender(t)
 		installer := &Installer{
 			latestDir:  filepath.Join("testdata", "example-install"),
 			installDir: outDir,
@@ -172,8 +259,39 @@ func TestInstallArtifacts(t *testing.T) {
 
 		svc.On("Stop").Once().Return(nil)
 
-		err = installer.Install()
+		actions := []action.RollbackableAction{}
+		rb.On("AppendAction", mock.Anything).Run(func(args mock.Arguments) {
+			action := args.Get(0).(action.RollbackableAction)
+			actions = append(actions, action)
+		})
+
+		err = installer.Install(rb)
 		require.ErrorContains(t, err, "failed to install new files")
+		t.Logf("Error: %s", err)
+
+		copyTestTxtAction, err := action.NewCopyFileAction(
+			filepath.Join("test.txt"),
+			filepath.Join(installer.installDir, "test.txt"),
+			installer.tmpDir,
+		)
+		require.NoError(t, err)
+		copyTestTxtAction.FileCreated = false
+
+		copyNestedTestTxtAction, err := action.NewCopyFileAction(
+			filepath.Join("test-folder", "another-test.txt"),
+			filepath.Join(installer.installDir, "test-folder", "another-test.txt"),
+			installer.tmpDir,
+		)
+		require.NoError(t, err)
+		copyNestedTestTxtAction.FileCreated = true
+
+		require.Equal(t, []action.RollbackableAction{
+			action.NewServiceStopAction(svc),
+			copyNestedTestTxtAction,
+			// copyTestTxtAction is appended even though it failed; This is because we don't know WHY it failed, so we should keep it and try a rollback anyways,
+			// in case it was actually a partial write.
+			copyTestTxtAction,
+		}, actions)
 	})
 }
 

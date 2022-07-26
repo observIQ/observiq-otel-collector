@@ -15,13 +15,21 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"time"
 
+	"github.com/observiq/observiq-otel-collector/packagestate"
 	"github.com/observiq/observiq-otel-collector/updater/internal/install"
+	"github.com/observiq/observiq-otel-collector/updater/internal/rollback"
+	"github.com/observiq/observiq-otel-collector/updater/internal/state"
 	"github.com/observiq/observiq-otel-collector/updater/internal/version"
+	"github.com/open-telemetry/opamp-go/protobufs"
 	"github.com/spf13/pflag"
+	"go.uber.org/zap"
 )
 
 // Unimplemented
@@ -43,12 +51,58 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create a monitor and load the package status file
+	// TODO replace nop logger with real one
+	monitor, err := state.NewCollectorMonitor(zap.NewNop())
+	if err != nil {
+		log.Fatalln("Failed to create monitor:", err)
+	}
+
 	installer, err := install.NewInstaller(*tmpDir)
 	if err != nil {
 		log.Fatalf("Failed to create installer: %s", err)
 	}
 
-	if err := installer.Install(); err != nil {
-		log.Fatalf("Failed to install: %s", err)
+	rb, err := rollback.NewRollbacker(*tmpDir)
+	if err != nil {
+		log.Fatalf("Failed to create rollbacker: %s", err)
 	}
+
+	if err := rb.Backup(); err != nil {
+		log.Fatalf("Failed to backup: %s", err)
+	}
+
+	if err := installer.Install(rb); err != nil {
+		log.Default().Printf("Failed to install: %s", err)
+
+		// Set the state to failed before rollback so collector knows it failed
+		if setErr := monitor.SetState(packagestate.DefaultFileName, protobufs.PackageStatus_InstallFailed, err); setErr != nil {
+			log.Println("Failed to set state on install failure:", setErr)
+		}
+		rb.Rollback()
+		log.Default().Fatalf("Rollback complete")
+	}
+
+	// Create a context with timeout to wait for a success or failed status
+	checkCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Monitor the install state
+	if err := monitor.MonitorForSuccess(checkCtx, packagestate.DefaultFileName); err != nil {
+		log.Println("Failed to install:", err)
+
+		// If this is not an error due to the collector setting a failed status we need to set a failed status
+		if !errors.Is(err, state.ErrFailedStatus) {
+			// Set the state to failed before rollback so collector knows it failed
+			if setErr := monitor.SetState(packagestate.DefaultFileName, protobufs.PackageStatus_InstallFailed, err); setErr != nil {
+				log.Println("Failed to set state on install failure:", setErr)
+			}
+		}
+
+		rb.Rollback()
+		log.Fatalln("Rollback complete")
+	}
+
+	// Successful update
+	log.Println("Update Complete")
 }

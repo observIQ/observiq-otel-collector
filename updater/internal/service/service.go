@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package install
+package service
 
 import (
 	"bytes"
@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 )
 
+//go:generate mockery --name Service --filename service.go
 // Service represents a controllable service
 type Service interface {
 	// Start the service
@@ -28,11 +29,11 @@ type Service interface {
 	// Stop the service
 	Stop() error
 
-	// Installs the service
-	Install() error
+	// Updates the old service configuration to the new one
+	Update() error
 
-	// Uninstalls the service
-	Uninstall() error
+	// Backup backs the current service configuration to the given directory
+	Backup(outDir string) error
 }
 
 // replaceInstallDir replaces "[INSTALLDIR]" with the given installDir string.

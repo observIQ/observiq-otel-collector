@@ -15,7 +15,7 @@
 // an elevated user is needed to run the service tests
 //go:build windows && integration
 
-package install
+package service
 
 import (
 	"fmt"
@@ -28,6 +28,7 @@ import (
 
 	"golang.org/x/sys/windows/registry"
 
+	"github.com/observiq/observiq-otel-collector/updater/internal/path"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/windows/svc"
@@ -57,7 +58,7 @@ func TestWindowsServiceInstall(t *testing.T) {
 			productName:        testProductName,
 		}
 
-		err = w.Install()
+		err = w.install()
 		require.NoError(t, err)
 
 		//We want to check that the service was actually loaded
@@ -76,7 +77,7 @@ func TestWindowsServiceInstall(t *testing.T) {
 			},
 		)
 
-		err = w.Uninstall()
+		err = w.uninstall()
 		require.NoError(t, err)
 
 		//Make sure the service is no longer listed
@@ -106,7 +107,7 @@ func TestWindowsServiceInstall(t *testing.T) {
 			productName:        testProductName,
 		}
 
-		err = w.Install()
+		err = w.install()
 		require.NoError(t, err)
 
 		//We want to check that the service was actually loaded
@@ -125,7 +126,7 @@ func TestWindowsServiceInstall(t *testing.T) {
 			},
 		)
 
-		err = w.Uninstall()
+		err = w.uninstall()
 		require.NoError(t, err)
 
 		//Make sure the service is no longer listed
@@ -154,7 +155,7 @@ func TestWindowsServiceInstall(t *testing.T) {
 			productName:        testProductName,
 		}
 
-		err = w.Install()
+		err = w.install()
 		require.NoError(t, err)
 
 		// We want to check that the service was actually loaded
@@ -170,7 +171,7 @@ func TestWindowsServiceInstall(t *testing.T) {
 
 		requireServiceRunningStatus(t, false)
 
-		err = w.Uninstall()
+		err = w.uninstall()
 		require.NoError(t, err)
 
 		// Make sure the service is no longer listed
@@ -199,7 +200,7 @@ func TestWindowsServiceInstall(t *testing.T) {
 			productName:        testProductName,
 		}
 
-		err = w.Install()
+		err = w.install()
 		require.ErrorContains(t, err, "The system cannot find the file specified.")
 		requireServiceLoadedStatus(t, false)
 	})
@@ -216,7 +217,7 @@ func TestWindowsServiceInstall(t *testing.T) {
 			productName:        testProductName,
 		}
 
-		err := w.Uninstall()
+		err := w.uninstall()
 		require.ErrorContains(t, err, "failed to open service")
 		requireServiceLoadedStatus(t, false)
 	})
@@ -251,6 +252,77 @@ func TestWindowsServiceInstall(t *testing.T) {
 
 		err := w.Stop()
 		require.ErrorContains(t, err, "failed to open service")
+	})
+
+	t.Run("Test backup works", func(t *testing.T) {
+		tempDir := t.TempDir()
+		installDir := filepath.Join(tempDir, "install directory")
+		backupDir := filepath.Join(tempDir, "backup")
+
+		require.NoError(t, os.MkdirAll(installDir, 0775))
+		require.NoError(t, os.MkdirAll(backupDir, 0775))
+
+		testProductName := "Test Product"
+
+		serviceJSON := filepath.Join(installDir, "windows-service.json")
+		testServiceProgram := filepath.Join(installDir, "windows-service.exe")
+		serviceGoFile, err := filepath.Abs(filepath.Join("testdata", "test-windows-service.go"))
+		require.NoError(t, err)
+
+		writeServiceFile(t, serviceJSON, filepath.Join("testdata", "windows-service.json"), serviceGoFile)
+		compileProgram(t, serviceGoFile, testServiceProgram)
+
+		defer uninstallService(t)
+		createInstallDirRegistryKey(t, testProductName, installDir)
+		defer deleteInstallDirRegistryKey(t, testProductName)
+
+		w := &windowsService{
+			newServiceFilePath: serviceJSON,
+			serviceName:        "windows-service",
+			productName:        testProductName,
+		}
+
+		err = w.install()
+		require.NoError(t, err)
+
+		//We want to check that the service was actually loaded
+		requireServiceLoadedStatus(t, true)
+
+		requireServiceConfigMatches(t,
+			testServiceProgram,
+			"windows-service",
+			mgr.StartAutomatic,
+			"Test Windows Service",
+			"This is a windows service to test",
+			true,
+			[]string{
+				"--config",
+				filepath.Join(installDir, "test.yaml"),
+			},
+		)
+
+		// Take a backup; Assert the backup makes sense.
+		// It will not be the same as the original service file due to expansion of INSTALLDIR
+		// which is OK and expected.
+		err = w.Backup(backupDir)
+		require.NoError(t, err)
+
+		backupSvcFile := path.BackupServiceFile(backupDir)
+
+		svcCfg, err := readWindowsServiceConfig(backupSvcFile)
+		require.NoError(t, err)
+
+		assert.Equal(t, &windowsServiceConfig{
+			Path: "windows-service.exe",
+			Service: windowsServiceDefinitionConfig{
+				Start:       "delayed",
+				DisplayName: "Test Windows Service",
+				Description: "This is a windows service to test",
+				Arguments:   fmt.Sprintf("--config &quot;%s&quot;", filepath.Join(installDir, "test.yaml")),
+			},
+		}, svcCfg)
+
+		err = w.uninstall()
 	})
 }
 
@@ -289,7 +361,7 @@ func TestStartType(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("cfgStartType: %s", tc.cfgStartType), func(t *testing.T) {
-			st, d, err := startType(tc.cfgStartType)
+			st, d, err := winapiStartType(tc.cfgStartType)
 			if tc.expectedErr != "" {
 				require.ErrorContains(t, err, tc.expectedErr)
 			} else {
