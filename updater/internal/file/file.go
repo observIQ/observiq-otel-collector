@@ -17,14 +17,15 @@ package file
 import (
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
+
+	"go.uber.org/zap"
 )
 
 // CopyFile copies the file from pathIn to pathOut.
 // If the file does not exist, it is created. If the file does exist, it is truncated before writing.
-func CopyFile(pathIn, pathOut string, overwrite bool) error {
+func CopyFile(logger *zap.Logger, pathIn, pathOut string, overwrite bool) error {
 	pathInClean := filepath.Clean(pathIn)
 
 	// Open the input file for reading.
@@ -35,7 +36,7 @@ func CopyFile(pathIn, pathOut string, overwrite bool) error {
 	defer func() {
 		err := inFile.Close()
 		if err != nil {
-			log.Default().Printf("CopyFile: Failed to close input file: %s", err)
+			logger.Info("Failed to close input file", zap.Error(err))
 		}
 	}()
 
@@ -58,7 +59,7 @@ func CopyFile(pathIn, pathOut string, overwrite bool) error {
 	defer func() {
 		err := outFile.Close()
 		if err != nil {
-			log.Default().Printf("CopyFile: Failed to close output file: %s", err)
+			logger.Info("Failed to close output file", zap.Error(err))
 		}
 	}()
 

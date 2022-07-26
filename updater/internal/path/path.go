@@ -21,6 +21,8 @@ const (
 	rollbackDirFragment       = "rollback"
 	serviceFileDirFragment    = "install"
 	serviceFileBackupFilename = "backup.service"
+	logDirFragment            = "log"
+	logFile                   = "updater.log"
 )
 
 // LatestDirFromTempDir gets the path to the "latest" dir, where the new artifacts are,
@@ -43,4 +45,9 @@ func ServiceFileDir(installBaseDir string) string {
 // BackupServiceFile returns the full path to the backup service file from the service file directory path
 func BackupServiceFile(serviceFileDir string) string {
 	return filepath.Join(serviceFileDir, serviceFileBackupFilename)
+}
+
+// LogFile returns the full path to the log file for the updater
+func LogFile(installDir string) string {
+	return filepath.Join(installDir, logDirFragment, logFile)
 }

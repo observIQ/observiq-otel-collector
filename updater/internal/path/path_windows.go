@@ -16,15 +16,15 @@ package path
 
 import (
 	"fmt"
-	"log"
 
+	"go.uber.org/zap"
 	"golang.org/x/sys/windows/registry"
 )
 
 const defaultProductName = "observIQ Distro for OpenTelemetry Collector"
 
 // InstallDirFromRegistry gets the installation dir of the given product from the Windows Registry
-func InstallDirFromRegistry(productName string) (string, error) {
+func InstallDirFromRegistry(logger *zap.Logger, productName string) (string, error) {
 	// this key is created when installing using the MSI installer
 	keyPath := fmt.Sprintf(`Software\Microsoft\Windows\CurrentVersion\Uninstall\%s`, productName)
 	key, err := registry.OpenKey(registry.LOCAL_MACHINE, keyPath, registry.READ)
@@ -34,7 +34,7 @@ func InstallDirFromRegistry(productName string) (string, error) {
 	defer func() {
 		err := key.Close()
 		if err != nil {
-			log.Default().Printf("InstallDirFromRegistry: failed to close registry key")
+			logger.Error("InstallDirFromRegistry: failed to close registry key", zap.Error(err))
 		}
 	}()
 
@@ -48,6 +48,6 @@ func InstallDirFromRegistry(productName string) (string, error) {
 }
 
 // InstallDir returns the filepath to the install directory
-func InstallDir() (string, error) {
-	return InstallDirFromRegistry(defaultProductName)
+func InstallDir(logger *zap.Logger) (string, error) {
+	return InstallDirFromRegistry(logger, defaultProductName)
 }

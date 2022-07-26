@@ -19,6 +19,7 @@ import (
 
 	"github.com/observiq/observiq-otel-collector/updater/internal/service/mocks"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zaptest"
 )
 
 func TestServiceStartAction(t *testing.T) {
@@ -43,7 +44,7 @@ func TestServiceStopAction(t *testing.T) {
 
 func TestServiceUpdateAction(t *testing.T) {
 	svc := mocks.NewService(t)
-	sua := NewServiceUpdateAction("./testdata")
+	sua := NewServiceUpdateAction(zaptest.NewLogger(t), "./testdata")
 	sua.backupSvc = svc
 
 	svc.On("Update").Once().Return(nil)

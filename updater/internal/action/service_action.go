@@ -17,6 +17,7 @@ package action
 import (
 	"github.com/observiq/observiq-otel-collector/updater/internal/path"
 	"github.com/observiq/observiq-otel-collector/updater/internal/service"
+	"go.uber.org/zap"
 )
 
 // ServiceStopAction is an action that records that a service was stopped.
@@ -65,9 +66,11 @@ type ServiceUpdateAction struct {
 var _ RollbackableAction = (*ServiceUpdateAction)(nil)
 
 // NewServiceUpdateAction creates a new ServiceUpdateAction
-func NewServiceUpdateAction(tmpDir string) *ServiceUpdateAction {
+func NewServiceUpdateAction(logger *zap.Logger, tmpDir string) *ServiceUpdateAction {
+	namedLogger := logger.Named("service-update-action")
 	return &ServiceUpdateAction{
 		backupSvc: service.NewService(
+			namedLogger,
 			"", // latestDir doesn't matter here
 			service.WithServiceFile(path.BackupServiceFile(path.ServiceFileDir(path.BackupDirFromTempDir(tmpDir)))),
 		),

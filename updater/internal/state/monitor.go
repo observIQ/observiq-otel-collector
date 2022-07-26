@@ -52,8 +52,9 @@ type CollectorMonitor struct {
 
 // NewCollectorMonitor create a new Monitor specifically for the collector
 func NewCollectorMonitor(logger *zap.Logger) (Monitor, error) {
+	namedLogger := logger.Named("collector-monitor")
 	// Get install directory
-	installDir, err := path.InstallDir()
+	installDir, err := path.InstallDir(namedLogger.Named("install-dir"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to determine install directory: %w", err)
 	}
@@ -61,7 +62,7 @@ func NewCollectorMonitor(logger *zap.Logger) (Monitor, error) {
 	// Create a collector monitor
 	packageStatusPath := filepath.Join(installDir, packagestate.DefaultFileName)
 	collectorMonitor := &CollectorMonitor{
-		stateManager: packagestate.NewFileStateManager(logger, packageStatusPath),
+		stateManager: packagestate.NewFileStateManager(namedLogger, packageStatusPath),
 	}
 
 	// Load the current status to ensure the package status file exists

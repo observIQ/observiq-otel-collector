@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 
@@ -50,11 +51,12 @@ func WithServiceFile(svcFilePath string) Option {
 }
 
 // NewService returns an instance of the Service interface for managing the observiq-otel-collector service on the current OS.
-func NewService(latestPath string, opts ...Option) Service {
+func NewService(logger *zap.Logger, latestPath string, opts ...Option) Service {
 	winSvc := &windowsService{
 		newServiceFilePath: filepath.Join(path.ServiceFileDir(latestPath), "windows_service.json"),
 		serviceName:        defaultServiceName,
 		productName:        defaultProductName,
+		logger:             logger.Named("windows-service"),
 	}
 
 	for _, opt := range opts {
@@ -71,6 +73,7 @@ type windowsService struct {
 	serviceName string
 	// productName is the name of the installed product
 	productName string
+	logger      *zap.Logger
 }
 
 // Start the service
@@ -124,7 +127,7 @@ func (w windowsService) install() error {
 	}
 
 	// fetch the install directory so that we can determine the binary path that we need to execute
-	iDir, err := path.InstallDirFromRegistry(w.productName)
+	iDir, err := path.InstallDirFromRegistry(w.logger.Named("install-dir"), w.productName)
 	if err != nil {
 		return fmt.Errorf("failed to get install dir: %w", err)
 	}
@@ -250,7 +253,7 @@ func (w windowsService) Backup(outDir string) error {
 	}
 	defer func() {
 		if err := f.Close(); err != nil {
-			log.Default().Printf("windowsService.Backup: Failed to close backup service file: %s", err)
+			w.logger.Error("Failed to close backup service file", zap.Error(err))
 		}
 	}()
 
@@ -332,7 +335,7 @@ func (w windowsService) currentServiceConfig() (*windowsServiceConfig, error) {
 		return nil, fmt.Errorf("failed to split service BinaryPathName: %w", err)
 	}
 
-	iDir, err := path.InstallDirFromRegistry(w.productName)
+	iDir, err := path.InstallDirFromRegistry(w.logger.Named("install-dir"), w.productName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get install dir: %w", err)
 	}

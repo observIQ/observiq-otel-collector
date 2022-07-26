@@ -26,6 +26,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zaptest"
 )
 
 func TestRollbackerBackup(t *testing.T) {
@@ -41,6 +42,7 @@ func TestRollbackerBackup(t *testing.T) {
 			backupDir:   outDir,
 			installDir:  installDir,
 			tmpDir:      filepath.Join(installDir, "tmp-dir"),
+			logger:      zaptest.NewLogger(t),
 		}
 
 		err := rb.Backup()
@@ -63,6 +65,7 @@ func TestRollbackerBackup(t *testing.T) {
 			backupDir:   outDir,
 			installDir:  installDir,
 			tmpDir:      filepath.Join(installDir, "tmp-dir"),
+			logger:      zaptest.NewLogger(t),
 		}
 
 		err := rb.Backup()
@@ -85,6 +88,7 @@ func TestRollbackerBackup(t *testing.T) {
 			backupDir:   outDir,
 			installDir:  installDir,
 			tmpDir:      filepath.Join(installDir, "tmp-dir"),
+			logger:      zaptest.NewLogger(t),
 		}
 
 		err = rb.Backup()
@@ -101,7 +105,9 @@ func TestRollbackerRollback(t *testing.T) {
 	t.Run("Runs rollback actions in the correct order", func(t *testing.T) {
 		seq := 0
 
-		rb := &Rollbacker{}
+		rb := &Rollbacker{
+			logger: zaptest.NewLogger(t),
+		}
 
 		for i := 0; i < 10; i++ {
 			actionNum := i
@@ -124,7 +130,9 @@ func TestRollbackerRollback(t *testing.T) {
 	t.Run("Continues despite rollback errors", func(t *testing.T) {
 		seq := 0
 
-		rb := &Rollbacker{}
+		rb := &Rollbacker{
+			logger: zaptest.NewLogger(t),
+		}
 
 		for i := 0; i < 10; i++ {
 			actionNum := i

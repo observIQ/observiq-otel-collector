@@ -17,7 +17,6 @@ package rollback
 import (
 	"fmt"
 	"io/fs"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,6 +25,7 @@ import (
 	"github.com/observiq/observiq-otel-collector/updater/internal/file"
 	"github.com/observiq/observiq-otel-collector/updater/internal/path"
 	"github.com/observiq/observiq-otel-collector/updater/internal/service"
+	"go.uber.org/zap"
 )
 
 // ActionAppender is an interface that allows actions to be appended to it.
@@ -42,11 +42,14 @@ type Rollbacker struct {
 	installDir  string
 	tmpDir      string
 	actions     []action.RollbackableAction
+	logger      *zap.Logger
 }
 
 // NewRollbacker returns a new Rollbacker
-func NewRollbacker(tmpDir string) (*Rollbacker, error) {
-	installDir, err := path.InstallDir()
+func NewRollbacker(logger *zap.Logger, tmpDir string) (*Rollbacker, error) {
+	namedLogger := logger.Named("rollbacker")
+
+	installDir, err := path.InstallDir(namedLogger.Named("install-dir"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to determine install dir: %w", err)
 	}
@@ -55,7 +58,8 @@ func NewRollbacker(tmpDir string) (*Rollbacker, error) {
 		backupDir:   path.BackupDirFromTempDir(tmpDir),
 		installDir:  installDir,
 		tmpDir:      tmpDir,
-		originalSvc: service.NewService(path.LatestDirFromTempDir(tmpDir)),
+		logger:      namedLogger,
+		originalSvc: service.NewService(namedLogger, path.LatestDirFromTempDir(tmpDir)),
 	}, nil
 }
 
@@ -66,13 +70,14 @@ func (r *Rollbacker) AppendAction(action action.RollbackableAction) {
 
 // Backup backs up the installDir to the rollbackDir
 func (r Rollbacker) Backup() error {
+	r.logger.Debug("Backing up current installation")
 	// Remove any pre-existing backup
 	if err := os.RemoveAll(r.backupDir); err != nil {
 		return fmt.Errorf("failed to remove previous backup: %w", err)
 	}
 
 	// Copy all the files in the install directory to the backup directory
-	if err := copyFiles(r.installDir, r.backupDir, r.tmpDir); err != nil {
+	if err := copyFiles(r.logger, r.installDir, r.backupDir, r.tmpDir); err != nil {
 		return fmt.Errorf("failed to copy files to backup dir: %w", err)
 	}
 
@@ -86,18 +91,20 @@ func (r Rollbacker) Backup() error {
 
 // Rollback performs a rollback by undoing all recorded actions.
 func (r Rollbacker) Rollback() {
+	r.logger.Debug("Performing rollback")
 	// We need to loop through the actions slice backwards, to roll back the actions in the correct order.
 	// e.g. if StartService was called last, we need to stop the service first, then rollback previous actions.
 	for i := len(r.actions) - 1; i >= 0; i-- {
 		action := r.actions[i]
+		r.logger.Debug("Rolling back action", zap.Any("action", action))
 		if err := action.Rollback(); err != nil {
-			log.Default().Printf("Failed to run rollback option: %s", err)
+			r.logger.Error("Failed to run rollback action", zap.Error(err))
 		}
 	}
 }
 
 // copyFiles copies files from inputPath to output path, skipping tmpDir.
-func copyFiles(inputPath, outputPath, tmpDir string) error {
+func copyFiles(logger *zap.Logger, inputPath, outputPath, tmpDir string) error {
 	absTmpDir, err := filepath.Abs(tmpDir)
 	if err != nil {
 		return fmt.Errorf("failed to get absolute path for temporary directory: %w", err)
@@ -140,7 +147,7 @@ func copyFiles(inputPath, outputPath, tmpDir string) error {
 		}
 
 		// Fail if copying the input file to the output file would fail
-		if err := file.CopyFile(inPath, outPath, false); err != nil {
+		if err := file.CopyFile(logger.Named("copy-file"), inPath, outPath, false); err != nil {
 			return fmt.Errorf("failed to copy file: %w", err)
 		}
 

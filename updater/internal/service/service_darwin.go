@@ -24,6 +24,7 @@ import (
 
 	"github.com/observiq/observiq-otel-collector/updater/internal/file"
 	"github.com/observiq/observiq-otel-collector/updater/internal/path"
+	"go.uber.org/zap"
 )
 
 const (
@@ -41,11 +42,12 @@ func WithServiceFile(svcFilePath string) Option {
 }
 
 // NewService returns an instance of the Service interface for managing the observiq-otel-collector service on the current OS.
-func NewService(latestPath string, opts ...Option) Service {
+func NewService(logger *zap.Logger, latestPath string, opts ...Option) Service {
 	darwinSvc := &darwinService{
 		newServiceFilePath:       filepath.Join(path.ServiceFileDir(latestPath), "com.observiq.collector.plist"),
 		installedServiceFilePath: darwinServiceFilePath,
 		installDir:               path.DarwinInstallDir,
+		logger:                   logger.Named("darwin-service"),
 	}
 
 	for _, opt := range opts {
@@ -62,6 +64,7 @@ type darwinService struct {
 	installedServiceFilePath string
 	// installDir is the root directory of the main installation
 	installDir string
+	logger     *zap.Logger
 }
 
 // Start the service
@@ -137,7 +140,7 @@ func (d darwinService) Update() error {
 }
 
 func (d darwinService) Backup(outDir string) error {
-	if err := file.CopyFile(d.installedServiceFilePath, path.BackupServiceFile(outDir), false); err != nil {
+	if err := file.CopyFile(d.logger.Named("copy-file"), d.installedServiceFilePath, path.BackupServiceFile(outDir), false); err != nil {
 		return fmt.Errorf("failed to copy service file: %w", err)
 	}
 

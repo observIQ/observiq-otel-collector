@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zaptest"
 )
 
 func TestNewCopyFileAction(t *testing.T) {
@@ -29,7 +30,7 @@ func TestNewCopyFileAction(t *testing.T) {
 		outFile := filepath.Join(scratchDir, "test.txt")
 		inFile := filepath.Join(testTempDir, "latest", "test.txt")
 
-		a, err := NewCopyFileAction(inFile, outFile, testTempDir)
+		a, err := NewCopyFileAction(zaptest.NewLogger(t), inFile, outFile, testTempDir)
 		require.NoError(t, err)
 
 		require.Equal(t, &CopyFileAction{
@@ -37,7 +38,7 @@ func TestNewCopyFileAction(t *testing.T) {
 			ToPath:      outFile,
 			FileCreated: true,
 			backupDir:   filepath.Join(testTempDir, "rollback"),
-			latestDir:   filepath.Join(testTempDir, "latest"),
+			logger:      a.logger,
 		}, a)
 	})
 
@@ -51,7 +52,7 @@ func TestNewCopyFileAction(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, f.Close())
 
-		a, err := NewCopyFileAction(inFile, outFile, testTempDir)
+		a, err := NewCopyFileAction(zaptest.NewLogger(t), inFile, outFile, testTempDir)
 		require.NoError(t, err)
 
 		require.Equal(t, &CopyFileAction{
@@ -59,7 +60,7 @@ func TestNewCopyFileAction(t *testing.T) {
 			ToPath:      outFile,
 			FileCreated: false,
 			backupDir:   filepath.Join(testTempDir, "rollback"),
-			latestDir:   filepath.Join(testTempDir, "latest"),
+			logger:      a.logger,
 		}, a)
 	})
 }
@@ -71,7 +72,7 @@ func TestCopyFileActionRollback(t *testing.T) {
 		outFile := filepath.Join(scratchDir, "test.txt")
 		inFile := filepath.Join(testTempDir, "latest", "test.txt")
 
-		a, err := NewCopyFileAction(inFile, outFile, testTempDir)
+		a, err := NewCopyFileAction(zaptest.NewLogger(t), inFile, outFile, testTempDir)
 		require.NoError(t, err)
 
 		inBytes, err := os.ReadFile(inFile)
@@ -100,7 +101,7 @@ func TestCopyFileActionRollback(t *testing.T) {
 		err = os.WriteFile(outFile, originalBytes, 0600)
 		require.NoError(t, err)
 
-		a, err := NewCopyFileAction(inFileRel, outFile, testTempDir)
+		a, err := NewCopyFileAction(zaptest.NewLogger(t), inFileRel, outFile, testTempDir)
 		require.NoError(t, err)
 
 		// Overwrite original file with latest file
@@ -135,7 +136,7 @@ func TestCopyFileActionRollback(t *testing.T) {
 		err = os.WriteFile(outFile, originalBytes, 0600)
 		require.NoError(t, err)
 
-		a, err := NewCopyFileAction(inFile, outFile, testTempDir)
+		a, err := NewCopyFileAction(zaptest.NewLogger(t), inFile, outFile, testTempDir)
 		require.NoError(t, err)
 
 		// Overwrite original file with latest file

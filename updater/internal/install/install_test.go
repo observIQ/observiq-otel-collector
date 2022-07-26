@@ -26,6 +26,7 @@ import (
 	"github.com/observiq/observiq-otel-collector/updater/internal/service/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zaptest"
 )
 
 func TestInstallArtifacts(t *testing.T) {
@@ -38,6 +39,7 @@ func TestInstallArtifacts(t *testing.T) {
 			latestDir:  filepath.Join("testdata", "example-install"),
 			installDir: outDir,
 			svc:        svc,
+			logger:     zaptest.NewLogger(t),
 		}
 
 		outDirConfig := filepath.Join(outDir, "config.yaml")
@@ -76,6 +78,7 @@ func TestInstallArtifacts(t *testing.T) {
 		contentsEqual(t, filepath.Join(outDir, "test-folder", "another-test.txt"), "This is a nested text file\n")
 
 		copyTestTxtAction, err := action.NewCopyFileAction(
+			installer.logger,
 			filepath.Join("test.txt"),
 			filepath.Join(installer.installDir, "test.txt"),
 			installer.tmpDir,
@@ -84,6 +87,7 @@ func TestInstallArtifacts(t *testing.T) {
 		copyTestTxtAction.FileCreated = true
 
 		copyNestedTestTxtAction, err := action.NewCopyFileAction(
+			installer.logger,
 			filepath.Join("test-folder", "another-test.txt"),
 			filepath.Join(installer.installDir, "test-folder", "another-test.txt"),
 			installer.tmpDir,
@@ -95,7 +99,7 @@ func TestInstallArtifacts(t *testing.T) {
 			action.NewServiceStopAction(svc),
 			copyNestedTestTxtAction,
 			copyTestTxtAction,
-			action.NewServiceUpdateAction(installer.tmpDir),
+			action.NewServiceUpdateAction(installer.logger, installer.tmpDir),
 			action.NewServiceStartAction(svc),
 		}, actions)
 	})
@@ -108,6 +112,7 @@ func TestInstallArtifacts(t *testing.T) {
 			latestDir:  filepath.Join("testdata", "example-install"),
 			installDir: outDir,
 			svc:        svc,
+			logger:     zaptest.NewLogger(t),
 		}
 
 		svc.On("Stop").Once().Return(errors.New("stop failed"))
@@ -124,6 +129,7 @@ func TestInstallArtifacts(t *testing.T) {
 			latestDir:  filepath.Join("testdata", "example-install"),
 			installDir: outDir,
 			svc:        svc,
+			logger:     zaptest.NewLogger(t),
 		}
 
 		svc.On("Stop").Once().Return(nil)
@@ -138,6 +144,7 @@ func TestInstallArtifacts(t *testing.T) {
 		err := installer.Install(rb)
 		require.ErrorContains(t, err, "failed to update service")
 		copyTestTxtAction, err := action.NewCopyFileAction(
+			installer.logger,
 			filepath.Join("test.txt"),
 			filepath.Join(installer.installDir, "test.txt"),
 			installer.tmpDir,
@@ -146,6 +153,7 @@ func TestInstallArtifacts(t *testing.T) {
 		copyTestTxtAction.FileCreated = true
 
 		copyNestedTestTxtAction, err := action.NewCopyFileAction(
+			installer.logger,
 			filepath.Join("test-folder", "another-test.txt"),
 			filepath.Join(installer.installDir, "test-folder", "another-test.txt"),
 			installer.tmpDir,
@@ -168,6 +176,7 @@ func TestInstallArtifacts(t *testing.T) {
 			latestDir:  filepath.Join("testdata", "example-install"),
 			installDir: outDir,
 			svc:        svc,
+			logger:     zaptest.NewLogger(t),
 		}
 
 		svc.On("Stop").Once().Return(nil)
@@ -184,6 +193,7 @@ func TestInstallArtifacts(t *testing.T) {
 		require.ErrorContains(t, err, "failed to start service")
 
 		copyTestTxtAction, err := action.NewCopyFileAction(
+			installer.logger,
 			filepath.Join("test.txt"),
 			filepath.Join(installer.installDir, "test.txt"),
 			installer.tmpDir,
@@ -192,6 +202,7 @@ func TestInstallArtifacts(t *testing.T) {
 		copyTestTxtAction.FileCreated = true
 
 		copyNestedTestTxtAction, err := action.NewCopyFileAction(
+			installer.logger,
 			filepath.Join("test-folder", "another-test.txt"),
 			filepath.Join(installer.installDir, "test-folder", "another-test.txt"),
 			installer.tmpDir,
@@ -203,7 +214,7 @@ func TestInstallArtifacts(t *testing.T) {
 			action.NewServiceStopAction(svc),
 			copyNestedTestTxtAction,
 			copyTestTxtAction,
-			action.NewServiceUpdateAction(installer.tmpDir),
+			action.NewServiceUpdateAction(installer.logger, installer.tmpDir),
 		}, actions)
 	})
 
@@ -215,6 +226,7 @@ func TestInstallArtifacts(t *testing.T) {
 			latestDir:  filepath.Join("testdata", "non-existent-dir"),
 			installDir: outDir,
 			svc:        svc,
+			logger:     zaptest.NewLogger(t),
 		}
 
 		svc.On("Stop").Once().Return(nil)
@@ -241,6 +253,7 @@ func TestInstallArtifacts(t *testing.T) {
 			latestDir:  filepath.Join("testdata", "example-install"),
 			installDir: outDir,
 			svc:        svc,
+			logger:     zaptest.NewLogger(t),
 		}
 
 		outDirConfig := filepath.Join(outDir, "config.yaml")
@@ -270,6 +283,7 @@ func TestInstallArtifacts(t *testing.T) {
 		t.Logf("Error: %s", err)
 
 		copyTestTxtAction, err := action.NewCopyFileAction(
+			installer.logger,
 			filepath.Join("test.txt"),
 			filepath.Join(installer.installDir, "test.txt"),
 			installer.tmpDir,
@@ -278,6 +292,7 @@ func TestInstallArtifacts(t *testing.T) {
 		copyTestTxtAction.FileCreated = false
 
 		copyNestedTestTxtAction, err := action.NewCopyFileAction(
+			installer.logger,
 			filepath.Join("test-folder", "another-test.txt"),
 			filepath.Join(installer.installDir, "test-folder", "another-test.txt"),
 			installer.tmpDir,

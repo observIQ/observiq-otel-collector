@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/zap/zaptest"
 	"golang.org/x/sys/windows/registry"
 
 	"github.com/observiq/observiq-otel-collector/updater/internal/path"
@@ -56,6 +57,7 @@ func TestWindowsServiceInstall(t *testing.T) {
 			newServiceFilePath: serviceJSON,
 			serviceName:        "windows-service",
 			productName:        testProductName,
+			logger:             zaptest.NewLogger(t),
 		}
 
 		err = w.install()
@@ -105,6 +107,7 @@ func TestWindowsServiceInstall(t *testing.T) {
 			newServiceFilePath: serviceJSON,
 			serviceName:        "windows-service",
 			productName:        testProductName,
+			logger:             zaptest.NewLogger(t),
 		}
 
 		err = w.install()
@@ -153,6 +156,7 @@ func TestWindowsServiceInstall(t *testing.T) {
 			newServiceFilePath: serviceJSON,
 			serviceName:        "windows-service",
 			productName:        testProductName,
+			logger:             zaptest.NewLogger(t),
 		}
 
 		err = w.install()
@@ -198,6 +202,7 @@ func TestWindowsServiceInstall(t *testing.T) {
 			newServiceFilePath: filepath.Join(tempDir, "not-a-valid-service.json"),
 			serviceName:        "windows-service",
 			productName:        testProductName,
+			logger:             zaptest.NewLogger(t),
 		}
 
 		err = w.install()
@@ -232,6 +237,7 @@ func TestWindowsServiceInstall(t *testing.T) {
 			newServiceFilePath: serviceJSON,
 			serviceName:        "windows-service",
 			productName:        testProductName,
+			logger:             zaptest.NewLogger(t),
 		}
 
 		err := w.Start()
@@ -248,6 +254,7 @@ func TestWindowsServiceInstall(t *testing.T) {
 			newServiceFilePath: serviceJSON,
 			serviceName:        "windows-service",
 			productName:        testProductName,
+			logger:             zaptest.NewLogger(t),
 		}
 
 		err := w.Stop()
@@ -280,6 +287,7 @@ func TestWindowsServiceInstall(t *testing.T) {
 			newServiceFilePath: serviceJSON,
 			serviceName:        "windows-service",
 			productName:        testProductName,
+			logger:             zaptest.NewLogger(t),
 		}
 
 		err = w.install()

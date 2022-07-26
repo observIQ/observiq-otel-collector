@@ -25,6 +25,7 @@ import (
 
 	"github.com/observiq/observiq-otel-collector/updater/internal/path"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zaptest"
 )
 
 func TestDarwinServiceInstall(t *testing.T) {
@@ -36,6 +37,7 @@ func TestDarwinServiceInstall(t *testing.T) {
 		d := &darwinService{
 			newServiceFilePath:       filepath.Join("testdata", "darwin-service.plist"),
 			installedServiceFilePath: installedServicePath,
+			logger:                   zaptest.NewLogger(t),
 		}
 
 		err := d.install()
@@ -62,6 +64,7 @@ func TestDarwinServiceInstall(t *testing.T) {
 		d := &darwinService{
 			newServiceFilePath:       filepath.Join("testdata", "darwin-service.plist"),
 			installedServiceFilePath: installedServicePath,
+			logger:                   zaptest.NewLogger(t),
 		}
 
 		err := d.install()
@@ -97,6 +100,7 @@ func TestDarwinServiceInstall(t *testing.T) {
 		d := &darwinService{
 			newServiceFilePath:       filepath.Join("testdata", "does-not-exist.plist"),
 			installedServiceFilePath: installedServicePath,
+			logger:                   zaptest.NewLogger(t),
 		}
 
 		err := d.install()
@@ -112,6 +116,7 @@ func TestDarwinServiceInstall(t *testing.T) {
 		d := &darwinService{
 			newServiceFilePath:       filepath.Join("testdata", "darwin-service.plist"),
 			installedServiceFilePath: installedServicePath,
+			logger:                   zaptest.NewLogger(t),
 		}
 
 		err := d.install()
@@ -127,6 +132,7 @@ func TestDarwinServiceInstall(t *testing.T) {
 		d := &darwinService{
 			newServiceFilePath:       filepath.Join("testdata", "darwin-service.plist"),
 			installedServiceFilePath: installedServicePath,
+			logger:                   zaptest.NewLogger(t),
 		}
 
 		err := d.uninstall()
@@ -142,6 +148,7 @@ func TestDarwinServiceInstall(t *testing.T) {
 		d := &darwinService{
 			newServiceFilePath:       filepath.Join("testdata", "darwin-service.plist"),
 			installedServiceFilePath: installedServicePath,
+			logger:                   zaptest.NewLogger(t),
 		}
 
 		err := d.Start()
@@ -156,6 +163,7 @@ func TestDarwinServiceInstall(t *testing.T) {
 		d := &darwinService{
 			newServiceFilePath:       filepath.Join("testdata", "darwin-service.plist"),
 			installedServiceFilePath: installedServicePath,
+			logger:                   zaptest.NewLogger(t),
 		}
 
 		err := d.Stop()
@@ -174,6 +182,7 @@ func TestDarwinServiceInstall(t *testing.T) {
 		d := &darwinService{
 			newServiceFilePath:       newServiceFile,
 			installedServiceFilePath: installedServicePath,
+			logger:                   zaptest.NewLogger(t),
 		}
 
 		err = d.install()
@@ -206,6 +215,7 @@ func TestDarwinServiceInstall(t *testing.T) {
 		d := &darwinService{
 			newServiceFilePath:       newServiceFile,
 			installedServiceFilePath: installedServicePath,
+			logger:                   zaptest.NewLogger(t),
 		}
 
 		backupServiceDir := t.TempDir()
@@ -223,6 +233,7 @@ func TestDarwinServiceInstall(t *testing.T) {
 		d := &darwinService{
 			newServiceFilePath:       newServiceFile,
 			installedServiceFilePath: installedServicePath,
+			logger:                   zaptest.NewLogger(t),
 		}
 
 		err := d.install()

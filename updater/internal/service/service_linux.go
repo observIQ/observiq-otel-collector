@@ -26,6 +26,7 @@ import (
 
 	"github.com/observiq/observiq-otel-collector/updater/internal/file"
 	"github.com/observiq/observiq-otel-collector/updater/internal/path"
+	"go.uber.org/zap"
 )
 
 const linuxServiceName = "observiq-otel-collector"
@@ -42,11 +43,12 @@ func WithServiceFile(svcFilePath string) Option {
 }
 
 // NewService returns an instance of the Service interface for managing the observiq-otel-collector service on the current OS.
-func NewService(latestPath string, opts ...Option) Service {
+func NewService(logger *zap.Logger, latestPath string, opts ...Option) Service {
 	linuxSvc := &linuxService{
 		newServiceFilePath:       filepath.Join(path.ServiceFileDir(latestPath), "observiq-otel-collector.service"),
 		serviceName:              linuxServiceName,
 		installedServiceFilePath: linuxServiceFilePath,
+		logger:                   logger.Named("linux-service"),
 	}
 
 	for _, opt := range opts {
@@ -63,6 +65,7 @@ type linuxService struct {
 	serviceName string
 	// installedServiceFilePath is the file path to the installed unit file
 	installedServiceFilePath string
+	logger                   *zap.Logger
 }
 
 // Start the service
@@ -160,7 +163,7 @@ func (l linuxService) Update() error {
 }
 
 func (l linuxService) Backup(outDir string) error {
-	if err := file.CopyFile(l.installedServiceFilePath, path.BackupServiceFile(outDir), false); err != nil {
+	if err := file.CopyFile(l.logger.Named("copy-file"), l.installedServiceFilePath, path.BackupServiceFile(outDir), false); err != nil {
 		return fmt.Errorf("failed to copy service file: %w", err)
 	}
 

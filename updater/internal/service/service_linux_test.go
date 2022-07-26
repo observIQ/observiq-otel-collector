@@ -25,6 +25,7 @@ import (
 
 	"github.com/observiq/observiq-otel-collector/updater/internal/path"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zaptest"
 )
 
 // NOTE: These tests must run as root in order to pass
@@ -37,6 +38,7 @@ func TestLinuxServiceInstall(t *testing.T) {
 			newServiceFilePath:       filepath.Join("testdata", "linux-service.service"),
 			serviceName:              "linux-service",
 			installedServiceFilePath: installedServicePath,
+			logger:                   zaptest.NewLogger(t),
 		}
 
 		err := l.install()
@@ -62,6 +64,7 @@ func TestLinuxServiceInstall(t *testing.T) {
 			newServiceFilePath:       filepath.Join("testdata", "linux-service.service"),
 			serviceName:              "linux-service",
 			installedServiceFilePath: installedServicePath,
+			logger:                   zaptest.NewLogger(t),
 		}
 
 		err := l.install()
@@ -97,6 +100,7 @@ func TestLinuxServiceInstall(t *testing.T) {
 			newServiceFilePath:       filepath.Join("testdata", "does-not-exist.service"),
 			serviceName:              "linux-service",
 			installedServiceFilePath: installedServicePath,
+			logger:                   zaptest.NewLogger(t),
 		}
 
 		err := l.install()
@@ -112,6 +116,7 @@ func TestLinuxServiceInstall(t *testing.T) {
 			newServiceFilePath:       filepath.Join("testdata", "linux-service.service"),
 			serviceName:              "linux-service",
 			installedServiceFilePath: installedServicePath,
+			logger:                   zaptest.NewLogger(t),
 		}
 
 		err := l.install()
@@ -127,6 +132,7 @@ func TestLinuxServiceInstall(t *testing.T) {
 			newServiceFilePath:       filepath.Join("testdata", "linux-service.service"),
 			serviceName:              "linux-service",
 			installedServiceFilePath: installedServicePath,
+			logger:                   zaptest.NewLogger(t),
 		}
 
 		err := l.uninstall()
@@ -142,6 +148,7 @@ func TestLinuxServiceInstall(t *testing.T) {
 			newServiceFilePath:       filepath.Join("testdata", "linux-service.service"),
 			serviceName:              "linux-service",
 			installedServiceFilePath: installedServicePath,
+			logger:                   zaptest.NewLogger(t),
 		}
 
 		err := l.Start()
@@ -156,6 +163,7 @@ func TestLinuxServiceInstall(t *testing.T) {
 			newServiceFilePath:       filepath.Join("testdata", "linux-service.service"),
 			serviceName:              "linux-service",
 			installedServiceFilePath: installedServicePath,
+			logger:                   zaptest.NewLogger(t),
 		}
 
 		err := l.Stop()
@@ -174,6 +182,7 @@ func TestLinuxServiceInstall(t *testing.T) {
 			newServiceFilePath:       newServiceFile,
 			installedServiceFilePath: installedServicePath,
 			serviceName:              "linux-service",
+			logger:                   zaptest.NewLogger(t),
 		}
 
 		err = d.install()
@@ -204,6 +213,7 @@ func TestLinuxServiceInstall(t *testing.T) {
 			newServiceFilePath:       newServiceFile,
 			installedServiceFilePath: installedServicePath,
 			serviceName:              "linux-service",
+			logger:                   zaptest.NewLogger(t),
 		}
 
 		backupServiceDir := t.TempDir()
@@ -221,6 +231,7 @@ func TestLinuxServiceInstall(t *testing.T) {
 			newServiceFilePath:       newServiceFile,
 			installedServiceFilePath: installedServicePath,
 			serviceName:              "linux-service",
+			logger:                   zaptest.NewLogger(t),
 		}
 
 		err := d.install()

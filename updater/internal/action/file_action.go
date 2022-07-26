@@ -22,6 +22,7 @@ import (
 
 	"github.com/observiq/observiq-otel-collector/updater/internal/file"
 	"github.com/observiq/observiq-otel-collector/updater/internal/path"
+	"go.uber.org/zap"
 )
 
 // CopyFileAction is an action that records a file being copied from FromPath to ToPath
@@ -34,16 +35,17 @@ type CopyFileAction struct {
 	// FileCreated is a bool that records whether this action had to create a new file or not
 	FileCreated bool
 	backupDir   string
-	latestDir   string
+	logger      *zap.Logger
 }
 
 var _ RollbackableAction = (*CopyFileAction)(nil)
+var _ fmt.Stringer = (*CopyFileAction)(nil)
 
 // NewCopyFileAction creates a new CopyFileAction that indicates a file was copied from
 // fromPathRel into toPath. tmpDir is specified for rollback purposes.
 // NOTE: This action MUST be created BEFORE the action actually takes place; This allows
 // for previous existence of the file to be recorded.
-func NewCopyFileAction(fromPathRel, toPath, tmpDir string) (*CopyFileAction, error) {
+func NewCopyFileAction(logger *zap.Logger, fromPathRel, toPath, tmpDir string) (*CopyFileAction, error) {
 	fileExists := true
 	_, err := os.Stat(toPath)
 	switch {
@@ -59,7 +61,7 @@ func NewCopyFileAction(fromPathRel, toPath, tmpDir string) (*CopyFileAction, err
 		// The file will be created if it doesn't already exist
 		FileCreated: !fileExists,
 		backupDir:   path.BackupDirFromTempDir(tmpDir),
-		latestDir:   path.LatestDirFromTempDir(tmpDir),
+		logger:      logger.Named("copy-file-action"),
 	}, nil
 }
 
@@ -74,9 +76,13 @@ func (c CopyFileAction) Rollback() error {
 
 	// join the relative path to the backup directory to get the location of the backup path
 	backupFilePath := filepath.Join(c.backupDir, c.FromPathRel)
-	if err := file.CopyFile(backupFilePath, c.ToPath, true); err != nil {
+	if err := file.CopyFile(c.logger.Named("copy-file"), backupFilePath, c.ToPath, true); err != nil {
 		return fmt.Errorf("failed to copy file: %w", err)
 	}
 
 	return nil
+}
+
+func (c CopyFileAction) String() string {
+	return fmt.Sprintf("CopyFileAction{FromPathRel: '%s', ToPath: '%s', FileCreated: '%t'}", c.FromPathRel, c.ToPath, c.FileCreated)
 }

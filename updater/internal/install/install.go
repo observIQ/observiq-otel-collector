@@ -25,6 +25,7 @@ import (
 	"github.com/observiq/observiq-otel-collector/updater/internal/path"
 	"github.com/observiq/observiq-otel-collector/updater/internal/rollback"
 	"github.com/observiq/observiq-otel-collector/updater/internal/service"
+	"go.uber.org/zap"
 )
 
 // Installer allows you to install files from latestDir into installDir,
@@ -34,21 +35,25 @@ type Installer struct {
 	installDir string
 	tmpDir     string
 	svc        service.Service
+	logger     *zap.Logger
 }
 
 // NewInstaller returns a new instance of an Installer.
-func NewInstaller(tmpDir string) (*Installer, error) {
+func NewInstaller(logger *zap.Logger, tmpDir string) (*Installer, error) {
+	namedLogger := logger.Named("installer")
+
 	latestDir := path.LatestDirFromTempDir(tmpDir)
-	installDirPath, err := path.InstallDir()
+	installDirPath, err := path.InstallDir(namedLogger.Named("install-dir"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to determine install dir: %w", err)
 	}
 
 	return &Installer{
 		latestDir:  latestDir,
-		svc:        service.NewService(latestDir),
+		svc:        service.NewService(namedLogger, latestDir),
 		installDir: installDirPath,
 		tmpDir:     tmpDir,
+		logger:     namedLogger,
 	}, nil
 }
 
@@ -60,31 +65,35 @@ func (i Installer) Install(rb rollback.ActionAppender) error {
 		return fmt.Errorf("failed to stop service: %w", err)
 	}
 	rb.AppendAction(action.NewServiceStopAction(i.svc))
+	i.logger.Debug("Service stopped")
 
 	// install files that go to installDirPath to their correct location,
 	// excluding any config files (logging.yaml, config.yaml, manager.yaml)
-	if err := copyFiles(i.latestDir, i.installDir, i.tmpDir, rb); err != nil {
+	if err := copyFiles(i.logger, i.latestDir, i.installDir, i.tmpDir, rb); err != nil {
 		return fmt.Errorf("failed to install new files: %w", err)
 	}
+	i.logger.Debug("Install artifacts copied")
 
 	// Update old service config to new service config
 	if err := i.svc.Update(); err != nil {
 		return fmt.Errorf("failed to update service: %w", err)
 	}
-	rb.AppendAction(action.NewServiceUpdateAction(i.tmpDir))
+	rb.AppendAction(action.NewServiceUpdateAction(i.logger, i.tmpDir))
+	i.logger.Debug("Updated service configuration")
 
 	// Start service
 	if err := i.svc.Start(); err != nil {
 		return fmt.Errorf("failed to start service: %w", err)
 	}
 	rb.AppendAction(action.NewServiceStartAction(i.svc))
+	i.logger.Debug("Service started")
 
 	return nil
 }
 
 // copyFiles moves the file tree rooted at latestDirPath to installDirPath,
 // skipping configuration files. Appends CopyFileAction-s to the Rollbacker as it copies file.
-func copyFiles(inputPath, outputPath, tmpDir string, rb rollback.ActionAppender) error {
+func copyFiles(logger *zap.Logger, inputPath, outputPath, tmpDir string, rb rollback.ActionAppender) error {
 	err := filepath.WalkDir(inputPath, func(inPath string, d fs.DirEntry, err error) error {
 		switch {
 		case err != nil:
@@ -116,7 +125,7 @@ func copyFiles(inputPath, outputPath, tmpDir string, rb rollback.ActionAppender)
 
 		// We create the action record here, because we want to record whether the file exists or not before
 		// we open the file (which will end up creating the file).
-		cfa, err := action.NewCopyFileAction(relPath, outPath, tmpDir)
+		cfa, err := action.NewCopyFileAction(logger, relPath, outPath, tmpDir)
 		if err != nil {
 			return fmt.Errorf("failed to create copy file action: %w", err)
 		}
@@ -126,7 +135,7 @@ func copyFiles(inputPath, outputPath, tmpDir string, rb rollback.ActionAppender)
 		// and we will want to roll that back if that is the case.
 		rb.AppendAction(cfa)
 
-		if err := file.CopyFile(inPath, outPath, true); err != nil {
+		if err := file.CopyFile(logger.Named("copy-file"), inPath, outPath, true); err != nil {
 			return fmt.Errorf("failed to copy file: %w", err)
 		}
 

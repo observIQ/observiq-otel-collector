@@ -24,6 +24,8 @@ import (
 
 	"github.com/observiq/observiq-otel-collector/packagestate"
 	"github.com/observiq/observiq-otel-collector/updater/internal/install"
+	"github.com/observiq/observiq-otel-collector/updater/internal/logging"
+	"github.com/observiq/observiq-otel-collector/updater/internal/path"
 	"github.com/observiq/observiq-otel-collector/updater/internal/rollback"
 	"github.com/observiq/observiq-otel-collector/updater/internal/state"
 	"github.com/observiq/observiq-otel-collector/updater/internal/version"
@@ -32,9 +34,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// Unimplemented
 func main() {
-	var showVersion = pflag.BoolP("version", "v", false, "Prints the version of the collector and exits, if specified.")
+	var showVersion = pflag.BoolP("version", "v", false, "Prints the version of the updater and exits, if specified.")
 	var tmpDir = pflag.String("tmpdir", "", "Temporary directory for artifacts. Parent of the 'rollback' directory.")
 	pflag.Parse()
 
@@ -51,58 +52,71 @@ func main() {
 		os.Exit(1)
 	}
 
+	// We can't create the zap logger yet, because we don't know the install dir, which is needed
+	// to create the logger. So we pass a Nop logger here.
+	installDir, err := path.InstallDir(zap.NewNop())
+	if err != nil {
+		log.Fatalf("Failed to determine install directory: %s", err)
+	}
+
+	logger, err := logging.NewLogger(installDir)
+	if err != nil {
+		log.Fatalf("Failed to create logger: %s", err)
+	}
+
 	// Create a monitor and load the package status file
-	// TODO replace nop logger with real one
-	monitor, err := state.NewCollectorMonitor(zap.NewNop())
+	monitor, err := state.NewCollectorMonitor(logger)
 	if err != nil {
-		log.Fatalln("Failed to create monitor:", err)
+		logger.Fatal("Failed to create monitor", zap.Error(err))
 	}
 
-	installer, err := install.NewInstaller(*tmpDir)
+	installer, err := install.NewInstaller(logger, *tmpDir)
 	if err != nil {
-		log.Fatalf("Failed to create installer: %s", err)
+		logger.Fatal("Failed to create installer", zap.Error(err))
 	}
 
-	rb, err := rollback.NewRollbacker(*tmpDir)
+	rb, err := rollback.NewRollbacker(logger, *tmpDir)
 	if err != nil {
-		log.Fatalf("Failed to create rollbacker: %s", err)
+		logger.Fatal("Failed to create rollbacker", zap.Error(err))
 	}
 
 	if err := rb.Backup(); err != nil {
-		log.Fatalf("Failed to backup: %s", err)
+		logger.Fatal("Failed to backup", zap.Error(err))
 	}
 
 	if err := installer.Install(rb); err != nil {
-		log.Default().Printf("Failed to install: %s", err)
+		logger.Error("Failed to install", zap.Error(err))
 
 		// Set the state to failed before rollback so collector knows it failed
 		if setErr := monitor.SetState(packagestate.DefaultFileName, protobufs.PackageStatus_InstallFailed, err); setErr != nil {
-			log.Println("Failed to set state on install failure:", setErr)
+			logger.Error("Failed to set state on install failure", zap.Error(setErr))
 		}
 		rb.Rollback()
-		log.Default().Fatalf("Rollback complete")
+		logger.Fatal("Rollback complete")
 	}
 
 	// Create a context with timeout to wait for a success or failed status
 	checkCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	logger.Debug("Installation successful, begin monitor for success")
+
 	// Monitor the install state
 	if err := monitor.MonitorForSuccess(checkCtx, packagestate.DefaultFileName); err != nil {
-		log.Println("Failed to install:", err)
+		logger.Error("Failed to install", zap.Error(err))
 
 		// If this is not an error due to the collector setting a failed status we need to set a failed status
 		if !errors.Is(err, state.ErrFailedStatus) {
 			// Set the state to failed before rollback so collector knows it failed
 			if setErr := monitor.SetState(packagestate.DefaultFileName, protobufs.PackageStatus_InstallFailed, err); setErr != nil {
-				log.Println("Failed to set state on install failure:", setErr)
+				logger.Error("Failed to set state on install failure", zap.Error(setErr))
 			}
 		}
 
 		rb.Rollback()
-		log.Fatalln("Rollback complete")
+		logger.Fatal("Rollback complete")
 	}
 
 	// Successful update
-	log.Println("Update Complete")
+	logger.Info("Update Complete")
 }
