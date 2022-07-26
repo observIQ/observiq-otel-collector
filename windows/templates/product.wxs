@@ -13,7 +13,7 @@
         If Id is set to "*", it auto generates an ID, which seems OK, but new MSIs will no longer be able to
         correlate itself with old versions of the installer, and will fail to uninstall old versions properly -->
    <Product Id="*" UpgradeCode="{{.UpgradeCode}}"
-            Name="{{.Product}}"
+            Name="{{.Product}} {{.Version.MSI}}"
             Version="{{.Version.MSI}}"
             Manufacturer="{{.Company}}"
             Language="1033">
