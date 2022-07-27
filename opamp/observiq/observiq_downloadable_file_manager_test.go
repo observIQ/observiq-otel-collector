@@ -32,8 +32,9 @@ import (
 )
 
 func TestDownloadFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	downloadableFileManager := newDownloadableFileManager(zap.NewNop(), tmpDir)
 	t.Run("Downloads File Over HTTP", func(t *testing.T) {
-		tmpDir := t.TempDir()
 
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodGet {
@@ -47,7 +48,7 @@ func TestDownloadFile(t *testing.T) {
 
 		outPath := filepath.Join(tmpDir, "out.txt")
 
-		err := downloadFile(s.URL, outPath)
+		err := downloadableFileManager.downloadFile(s.URL, outPath)
 		require.NoError(t, err)
 
 		b, err := os.ReadFile(outPath)
@@ -68,7 +69,7 @@ func TestDownloadFile(t *testing.T) {
 		}))
 		defer s.Close()
 
-		err := downloadFile(s.URL, tmpDir)
+		err := downloadableFileManager.downloadFile(s.URL, tmpDir)
 		require.ErrorContains(t, err, "failed to open file:")
 	})
 
@@ -76,7 +77,7 @@ func TestDownloadFile(t *testing.T) {
 		tmpDir := t.TempDir()
 		outPath := filepath.Join(tmpDir, "out.txt")
 
-		err := downloadFile("http://localhost:9999999", outPath)
+		err := downloadableFileManager.downloadFile("http://localhost:9999999", outPath)
 		require.ErrorContains(t, err, "could not GET url")
 	})
 
@@ -90,7 +91,7 @@ func TestDownloadFile(t *testing.T) {
 
 		outPath := filepath.Join(tmpDir, "out.txt")
 
-		err := downloadFile(s.URL, outPath)
+		err := downloadableFileManager.downloadFile(s.URL, outPath)
 		require.ErrorContains(t, err, "got non-200 status code (404)")
 	})
 }
@@ -117,13 +118,13 @@ func TestGetOutputFilePath(t *testing.T) {
 		},
 		{
 			name:        "Input url is invalid",
-			basepath:    filepath.Join("tmp", "observiq-otel-collector-update"),
+			basepath:    filepath.Join("/", "tmp", "observiq-otel-collector-update"),
 			url:         "http://local\thost/some-file.zip",
 			expectedErr: "cannot parse url",
 		},
 		{
 			name:        "Input url has no path",
-			basepath:    filepath.Join("tmp", "observiq-otel-collector-update"),
+			basepath:    filepath.Join("/", "tmp", "observiq-otel-collector-update"),
 			url:         "http://example.com",
 			expectedErr: "input url must have path",
 		},
@@ -143,6 +144,9 @@ func TestGetOutputFilePath(t *testing.T) {
 }
 
 func TestVerifyContentHash(t *testing.T) {
+	tmpDir := t.TempDir()
+	downloadableFileManager := newDownloadableFileManager(zap.NewNop(), tmpDir)
+
 	hash1, _ := hex.DecodeString("c87e2ca771bab6024c269b933389d2a92d4941c848c52f155b9b84e1f109fe35")
 	hash2, _ := hex.DecodeString("7e4ead2053637d9fcb7f3316e748becb8af163c6f851446eeef878a994ae5c4b")
 	testCases := []struct {
@@ -190,7 +194,7 @@ func TestVerifyContentHash(t *testing.T) {
 				require.NoError(t, err)
 
 			}
-			err := verifyContentHash(tc.contentPath, tc.hash)
+			err := downloadableFileManager.verifyContentHash(tc.contentPath, tc.hash)
 			if tc.expectedErr == "" {
 				require.NoError(t, err)
 			} else {

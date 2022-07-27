@@ -29,3 +29,4 @@ exceptions:
     - path: "./receiver/pluginreceiver"
     - path: "./exporter/googlecloudexporter"
     - path: "./packagestate"
+    - path: "./opamp/observiq/testdata/latest"

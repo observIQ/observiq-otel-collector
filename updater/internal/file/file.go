@@ -17,6 +17,7 @@ package file
 import (
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -40,19 +41,28 @@ func CopyFile(logger *zap.Logger, pathIn, pathOut string, overwrite bool) error 
 		}
 	}()
 
+	pathOutClean := filepath.Clean(pathOut)
+	fileMode := fs.FileMode(0600)
+
 	flags := os.O_CREATE | os.O_WRONLY
 	if overwrite {
 		// If we are OK to overwrite, we will truncate the file on open
 		flags |= os.O_TRUNC
+
+		// Save old file's permissions and delete it first if it exists
+		fileOutInfo, _ := os.Stat(pathOutClean)
+		if fileOutInfo != nil {
+			fileMode = fileOutInfo.Mode()
+		}
+		_ = os.Remove(pathOutClean)
 	} else {
 		// This flag will make OpenFile error if the file already exists
 		flags |= os.O_EXCL
 	}
 
-	pathOutClean := filepath.Clean(pathOut)
 	// Open the output file, creating it if it does not exist and truncating it.
 	//#nosec G304 -- out file is cleaned; this is a general purpose copy function
-	outFile, err := os.OpenFile(pathOutClean, flags, 0600)
+	outFile, err := os.OpenFile(pathOutClean, flags, fileMode)
 	if err != nil {
 		return fmt.Errorf("failed to open output file: %w", err)
 	}

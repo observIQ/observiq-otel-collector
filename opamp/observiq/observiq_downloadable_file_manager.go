@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -61,13 +60,13 @@ func (m DownloadableFileManager) FetchAndExtractArchive(file *protobufs.Download
 		return fmt.Errorf("failed to determine archive download path: %w", err)
 	}
 
-	if err := downloadFile(file.GetDownloadUrl(), archiveFilePath); err != nil {
+	if err := m.downloadFile(file.GetDownloadUrl(), archiveFilePath); err != nil {
 		return fmt.Errorf("failed to download file: %w", err)
 	}
 
 	extractPath := filepath.Join(m.tmpPath, extractFolder)
 
-	if err := verifyContentHash(archiveFilePath, file.GetContentHash()); err != nil {
+	if err := m.verifyContentHash(archiveFilePath, file.GetContentHash()); err != nil {
 		return fmt.Errorf("content hash could not be verified: %w", err)
 	}
 
@@ -84,7 +83,7 @@ func (m DownloadableFileManager) FetchAndExtractArchive(file *protobufs.Download
 }
 
 // Downloads the file into the outPath, truncating the file if it already exists
-func downloadFile(downloadURL string, outPath string) error {
+func (m DownloadableFileManager) downloadFile(downloadURL string, outPath string) error {
 	//#nosec G107 HTTP request must be dynamic based on input
 	resp, err := http.Get(downloadURL)
 	if err != nil {
@@ -104,7 +103,7 @@ func downloadFile(downloadURL string, outPath string) error {
 	defer func() {
 		err := f.Close()
 		if err != nil {
-			log.Default().Printf("Failed to close file: %s", err.Error())
+			m.logger.Warn("Failed to close file", zap.Error(err))
 		}
 	}()
 
@@ -117,6 +116,11 @@ func downloadFile(downloadURL string, outPath string) error {
 
 // getOutputFilePath gets the output path relative to the base dir for the archive from the given URL.
 func getOutputFilePath(basePath, downloadURL string) (string, error) {
+	err := os.MkdirAll(basePath, 0600)
+	if err != nil {
+		return "", fmt.Errorf("problem with base url: %w", err)
+	}
+
 	url, err := url.Parse(downloadURL)
 	if err != nil {
 		return "", fmt.Errorf("cannot parse url: %w", err)
@@ -129,7 +133,7 @@ func getOutputFilePath(basePath, downloadURL string) (string, error) {
 	return filepath.Join(basePath, filepath.Base(url.Path)), nil
 }
 
-func verifyContentHash(contentPath string, expectedFileHash []byte) error {
+func (m DownloadableFileManager) verifyContentHash(contentPath string, expectedFileHash []byte) error {
 	// Hash file at contentPath using sha256
 	fileHash := sha256.New()
 	contentPathClean := filepath.Clean(contentPath)
@@ -141,7 +145,7 @@ func verifyContentHash(contentPath string, expectedFileHash []byte) error {
 	defer func() {
 		err := f.Close()
 		if err != nil {
-			log.Default().Printf("Failed to close file: %s", err.Error())
+			m.logger.Warn("Failed to close file", zap.Error(err))
 		}
 	}()
 

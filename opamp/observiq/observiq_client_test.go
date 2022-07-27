@@ -129,6 +129,8 @@ func TestNewClient(t *testing.T) {
 				assert.Equal(t, mockCollector, observiqClient.collector)
 				assert.NotNil(t, observiqClient.ident)
 				assert.Equal(t, observiqClient.currentConfig, tc.config)
+				assert.False(t, observiqClient.safeGetDisconnecting())
+				assert.False(t, observiqClient.safeGetUpdatingPackage())
 			}
 
 		})
@@ -439,6 +441,7 @@ func TestClientDisconnect(t *testing.T) {
 	}
 
 	c.Disconnect(ctx)
+	assert.True(t, c.safeGetDisconnecting())
 	mockOpAmpClient.AssertExpectations(t)
 }
 
@@ -659,6 +662,20 @@ func TestClient_onConnectFailedHandler(t *testing.T) {
 				c := &Client{
 					logger:                zap.NewNop(),
 					packagesStateProvider: mockStateProvider,
+				}
+
+				c.onConnectFailedHandler(expectedErr)
+			},
+		},
+		{
+			desc: "Disconnect do not change package status",
+			testFunc: func(*testing.T) {
+				mockStateProvider := new(mocks.MockPackagesStateProvider)
+
+				c := &Client{
+					logger:                zap.NewNop(),
+					packagesStateProvider: mockStateProvider,
+					disconnecting:         true,
 				}
 
 				c.onConnectFailedHandler(expectedErr)
@@ -1144,8 +1161,11 @@ func TestClient_onPackagesAvailableHandler(t *testing.T) {
 				assert.NoError(t, err)
 			},
 		},
+		// The version of this test where the update goes well can't exist because
+		// it would kill the collector. StartAndMonitorUpdater will always return an error
+		// if it does return.
 		{
-			desc: "New PackagesAvailable version with good file",
+			desc: "New PackagesAvailable version with good file but bad update",
 			testFunc: func(t *testing.T) {
 				packagesNew := map[string]*protobufs.PackageAvailable{
 					collectorPackageName: {
@@ -1158,18 +1178,34 @@ func TestClient_onPackagesAvailableHandler(t *testing.T) {
 					AllPackagesHash: newAllHash,
 					Packages:        packagesNew,
 				}
-
-				mockProvider := mocks.NewMockPackagesStateProvider(t)
-				mockProvider.On("LastReportedStatuses").Return(packageStatuses, nil)
-				mockProvider.On("SetLastReportedStatuses", mock.Anything).Return(nil)
+				savedStatuses := map[string]*protobufs.PackageStatus{
+					collectorPackageName: {
+						Name:                 collectorPackageName,
+						AgentHasVersion:      version.Version(),
+						AgentHasHash:         packageHash,
+						ServerOfferedVersion: newVersion,
+						ServerOfferedHash:    newPackageHash,
+						Status:               protobufs.PackageStatus_Installing,
+					},
+				}
+				savedPackageStatuses := &protobufs.PackageStatuses{
+					ServerProvidedAllPackagesHash: newAllHash,
+					Packages:                      savedStatuses,
+				}
 				wg := sync.WaitGroup{}
-				wg.Add(1)
+				wg.Add(2)
+				mockUpdaterManager := mocks.NewMockUpdaterManager(t)
+				mockUpdaterManager.On("StartAndMonitorUpdater").Return(expectedErr)
+				mockProvider := mocks.NewMockPackagesStateProvider(t)
+				mockProvider.On("LastReportedStatuses").Return(packageStatuses, nil).Once()
+				mockProvider.On("LastReportedStatuses").Return(savedPackageStatuses, nil)
+				mockProvider.On("SetLastReportedStatuses", mock.Anything).Return(nil)
 				mockFileManager := mocks.NewMockDownloadableFileManager(t)
 				mockFileManager.On("FetchAndExtractArchive", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 					wg.Done()
 				})
 				mockOpAmpClient := mocks.NewMockOpAMPClient(t)
-				mockOpAmpClient.On("SetPackageStatuses", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+				mockOpAmpClient.On("SetPackageStatuses", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
 					status := args.Get(0).(*protobufs.PackageStatuses)
 
 					assert.NotNil(t, status)
@@ -1184,22 +1220,35 @@ func TestClient_onPackagesAvailableHandler(t *testing.T) {
 					assert.Equal(t, packageStatuses.Packages[collectorPackageName].AgentHasHash, status.Packages[collectorPackageName].AgentHasHash)
 					assert.Equal(t, packageStatuses.Packages[collectorPackageName].AgentHasVersion, status.Packages[collectorPackageName].AgentHasVersion)
 				})
+				mockOpAmpClient.On("SetPackageStatuses", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+					status := args.Get(0).(*protobufs.PackageStatuses)
+
+					assert.NotNil(t, status)
+					assert.Equal(t, "", status.ErrorMessage)
+					assert.Equal(t, packagesAvailableNew.AllPackagesHash, status.ServerProvidedAllPackagesHash)
+					assert.Equal(t, 1, len(status.Packages))
+					assert.Equal(t, packagesAvailableNew.Packages[collectorPackageName].Version, status.Packages[collectorPackageName].ServerOfferedVersion)
+					assert.Equal(t, packagesAvailableNew.Packages[collectorPackageName].Hash, status.Packages[collectorPackageName].ServerOfferedHash)
+					assert.Equal(t, "Failed to run the latest Updater: oops", status.Packages[collectorPackageName].ErrorMessage)
+					assert.Equal(t, protobufs.PackageStatus_InstallFailed, status.Packages[collectorPackageName].Status)
+					assert.Equal(t, collectorPackageName, status.Packages[collectorPackageName].Name)
+					assert.Equal(t, packageStatuses.Packages[collectorPackageName].AgentHasHash, status.Packages[collectorPackageName].AgentHasHash)
+					assert.Equal(t, packageStatuses.Packages[collectorPackageName].AgentHasVersion, status.Packages[collectorPackageName].AgentHasVersion)
+					wg.Done()
+				})
 
 				c := &Client{
 					packagesStateProvider:   mockProvider,
 					downloadableFileManager: mockFileManager,
 					opampClient:             mockOpAmpClient,
 					logger:                  zap.NewNop(),
+					updaterManager:          mockUpdaterManager,
 				}
 
 				err := c.onPackagesAvailableHandler(packagesAvailableNew)
 				assert.NoError(t, err)
 				wg.Wait()
-				// This is a half baked check. Ideally we'd like to check that this is true after the spun up goroutine is finished
-				// but there is no way to guarantee that without modifying code. So instead we'll do a partial check and just ensure
-				// that it was true at some point after the main function finishes (this will change anyways once updater monitoring
-				// is added)
-				assert.True(t, c.safeGetUpdatingPackage())
+				assert.False(t, c.safeGetUpdatingPackage())
 			},
 		},
 		{
@@ -1327,7 +1376,7 @@ func TestClient_onPackagesAvailableHandler(t *testing.T) {
 					assert.Equal(t, 1, len(status.Packages))
 					assert.Equal(t, packagesAvailableNew.Packages[collectorPackageName].Version, status.Packages[collectorPackageName].ServerOfferedVersion)
 					assert.Equal(t, packagesAvailableNew.Packages[collectorPackageName].Hash, status.Packages[collectorPackageName].ServerOfferedHash)
-					assert.Equal(t, "Failed to download and verify package observiq-otel-collector's downloadable file", status.Packages[collectorPackageName].ErrorMessage)
+					assert.Equal(t, "Failed to download and verify package observiq-otel-collector's downloadable file: oops", status.Packages[collectorPackageName].ErrorMessage)
 					assert.Equal(t, protobufs.PackageStatus_InstallFailed, status.Packages[collectorPackageName].Status)
 					assert.Equal(t, collectorPackageName, status.Packages[collectorPackageName].Name)
 					assert.Equal(t, packageStatuses.Packages[collectorPackageName].AgentHasHash, status.Packages[collectorPackageName].AgentHasHash)

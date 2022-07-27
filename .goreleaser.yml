@@ -85,6 +85,9 @@ archives:
       - src: release_deps/windows_service.json
         dst: install
         strip_parent: true
+      - src: release_deps/observiq-otel-collector.service
+        dst: "install"
+        strip_parent: true
     format_overrides:
       - goos: windows
         format: zip
