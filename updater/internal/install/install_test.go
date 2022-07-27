@@ -81,7 +81,7 @@ func TestInstallArtifacts(t *testing.T) {
 			installer.logger,
 			filepath.Join("test.txt"),
 			filepath.Join(installer.installDir, "test.txt"),
-			installer.tmpDir,
+			installer.installDir,
 		)
 		require.NoError(t, err)
 		copyTestTxtAction.FileCreated = true
@@ -90,7 +90,7 @@ func TestInstallArtifacts(t *testing.T) {
 			installer.logger,
 			filepath.Join("test-folder", "another-test.txt"),
 			filepath.Join(installer.installDir, "test-folder", "another-test.txt"),
-			installer.tmpDir,
+			installer.installDir,
 		)
 		require.NoError(t, err)
 		copyNestedTestTxtAction.FileCreated = true
@@ -99,7 +99,7 @@ func TestInstallArtifacts(t *testing.T) {
 			action.NewServiceStopAction(svc),
 			copyNestedTestTxtAction,
 			copyTestTxtAction,
-			action.NewServiceUpdateAction(installer.logger, installer.tmpDir),
+			action.NewServiceUpdateAction(installer.logger, installer.installDir),
 			action.NewServiceStartAction(svc),
 		}, actions)
 	})
@@ -147,7 +147,7 @@ func TestInstallArtifacts(t *testing.T) {
 			installer.logger,
 			filepath.Join("test.txt"),
 			filepath.Join(installer.installDir, "test.txt"),
-			installer.tmpDir,
+			installer.installDir,
 		)
 		require.NoError(t, err)
 		copyTestTxtAction.FileCreated = true
@@ -156,7 +156,7 @@ func TestInstallArtifacts(t *testing.T) {
 			installer.logger,
 			filepath.Join("test-folder", "another-test.txt"),
 			filepath.Join(installer.installDir, "test-folder", "another-test.txt"),
-			installer.tmpDir,
+			installer.installDir,
 		)
 		require.NoError(t, err)
 		copyNestedTestTxtAction.FileCreated = true
@@ -196,7 +196,7 @@ func TestInstallArtifacts(t *testing.T) {
 			installer.logger,
 			filepath.Join("test.txt"),
 			filepath.Join(installer.installDir, "test.txt"),
-			installer.tmpDir,
+			installer.installDir,
 		)
 		require.NoError(t, err)
 		copyTestTxtAction.FileCreated = true
@@ -205,7 +205,7 @@ func TestInstallArtifacts(t *testing.T) {
 			installer.logger,
 			filepath.Join("test-folder", "another-test.txt"),
 			filepath.Join(installer.installDir, "test-folder", "another-test.txt"),
-			installer.tmpDir,
+			installer.installDir,
 		)
 		require.NoError(t, err)
 		copyNestedTestTxtAction.FileCreated = true
@@ -214,7 +214,7 @@ func TestInstallArtifacts(t *testing.T) {
 			action.NewServiceStopAction(svc),
 			copyNestedTestTxtAction,
 			copyTestTxtAction,
-			action.NewServiceUpdateAction(installer.logger, installer.tmpDir),
+			action.NewServiceUpdateAction(installer.logger, installer.installDir),
 		}, actions)
 	})
 

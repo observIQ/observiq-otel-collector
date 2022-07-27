@@ -35,13 +35,12 @@ func TestRollbackerBackup(t *testing.T) {
 		installDir := filepath.Join("testdata", "rollbacker")
 
 		svc := service_mocks.NewService(t)
-		svc.On("Backup", filepath.Join(outDir, "install")).Return(nil)
+		svc.On("Backup").Return(nil)
 
 		rb := &Rollbacker{
 			originalSvc: svc,
 			backupDir:   outDir,
 			installDir:  installDir,
-			tmpDir:      filepath.Join(installDir, "tmp-dir"),
 			logger:      zaptest.NewLogger(t),
 		}
 
@@ -58,13 +57,12 @@ func TestRollbackerBackup(t *testing.T) {
 		installDir := filepath.Join("testdata", "rollbacker")
 
 		svc := service_mocks.NewService(t)
-		svc.On("Backup", filepath.Join(outDir, "install")).Return(fmt.Errorf("invalid permissions"))
+		svc.On("Backup").Return(fmt.Errorf("invalid permissions"))
 
 		rb := &Rollbacker{
 			originalSvc: svc,
 			backupDir:   outDir,
 			installDir:  installDir,
-			tmpDir:      filepath.Join(installDir, "tmp-dir"),
 			logger:      zaptest.NewLogger(t),
 		}
 
@@ -78,7 +76,7 @@ func TestRollbackerBackup(t *testing.T) {
 		leftoverFile := filepath.Join(outDir, "leftover-file.txt")
 
 		svc := service_mocks.NewService(t)
-		svc.On("Backup", filepath.Join(outDir, "install")).Return(nil)
+		svc.On("Backup").Return(nil)
 
 		err := os.WriteFile(leftoverFile, []byte("leftover file"), 0600)
 		require.NoError(t, err)
@@ -87,7 +85,6 @@ func TestRollbackerBackup(t *testing.T) {
 			originalSvc: svc,
 			backupDir:   outDir,
 			installDir:  installDir,
-			tmpDir:      filepath.Join(installDir, "tmp-dir"),
 			logger:      zaptest.NewLogger(t),
 		}
 

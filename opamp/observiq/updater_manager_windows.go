@@ -48,12 +48,9 @@ func newUpdaterManager(defaultLogger *zap.Logger, tmpPath string) updaterManager
 // While waiting for Updater, it should kill the collector and we should never execute any code past running it
 func (m windowsUpdaterManager) StartAndMonitorUpdater() error {
 	updaterPath := filepath.Join(m.tmpPath, updaterDir, updaterName)
-	absTmpPath, err := filepath.Abs(m.tmpPath)
-	if err != nil {
-		return fmt.Errorf("failed to get absolute path of tmp dir: %w", err)
-	}
+
 	//#nosec G204 -- paths are not determined via user input
-	cmd := exec.Command(updaterPath, "--tmpdir", absTmpPath)
+	cmd := exec.Command(updaterPath)
 
 	// Start does not block
 	if err := cmd.Start(); err != nil {

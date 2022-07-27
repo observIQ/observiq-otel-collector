@@ -66,13 +66,13 @@ type ServiceUpdateAction struct {
 var _ RollbackableAction = (*ServiceUpdateAction)(nil)
 
 // NewServiceUpdateAction creates a new ServiceUpdateAction
-func NewServiceUpdateAction(logger *zap.Logger, tmpDir string) *ServiceUpdateAction {
+func NewServiceUpdateAction(logger *zap.Logger, installDir string) *ServiceUpdateAction {
 	namedLogger := logger.Named("service-update-action")
 	return &ServiceUpdateAction{
 		backupSvc: service.NewService(
 			namedLogger,
 			"", // latestDir doesn't matter here
-			service.WithServiceFile(path.BackupServiceFile(path.ServiceFileDir(path.BackupDirFromTempDir(tmpDir)))),
+			service.WithServiceFile(path.BackupServiceFile(installDir)),
 		),
 	}
 }

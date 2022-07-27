@@ -178,10 +178,14 @@ func TestLinuxServiceInstall(t *testing.T) {
 		serviceFileContents, err := os.ReadFile(newServiceFile)
 		require.NoError(t, err)
 
+		installDir := t.TempDir()
+		require.NoError(t, os.MkdirAll(path.BackupDir(installDir), 0775))
+
 		d := &linuxService{
 			newServiceFilePath:       newServiceFile,
 			installedServiceFilePath: installedServicePath,
 			serviceName:              "linux-service",
+			installDir:               installDir,
 			logger:                   zaptest.NewLogger(t),
 		}
 
@@ -192,12 +196,11 @@ func TestLinuxServiceInstall(t *testing.T) {
 		// We want to check that the service was actually loaded
 		requireServiceLoadedStatus(t, true)
 
-		backupServiceDir := t.TempDir()
-		err = d.Backup(backupServiceDir)
+		err = d.Backup()
 		require.NoError(t, err)
-		require.FileExists(t, path.BackupServiceFile(backupServiceDir))
+		require.FileExists(t, path.BackupServiceFile(installDir))
 
-		backupServiceContents, err := os.ReadFile(path.BackupServiceFile(backupServiceDir))
+		backupServiceContents, err := os.ReadFile(path.BackupServiceFile(installDir))
 
 		require.Equal(t, serviceFileContents, backupServiceContents)
 		require.NoError(t, d.uninstall())
@@ -209,15 +212,18 @@ func TestLinuxServiceInstall(t *testing.T) {
 
 		newServiceFile := filepath.Join("testdata", "linux-service.service")
 
+		installDir := t.TempDir()
+		require.NoError(t, os.MkdirAll(path.BackupDir(installDir), 0775))
+
 		d := &linuxService{
 			newServiceFilePath:       newServiceFile,
 			installedServiceFilePath: installedServicePath,
 			serviceName:              "linux-service",
+			installDir:               installDir,
 			logger:                   zaptest.NewLogger(t),
 		}
 
-		backupServiceDir := t.TempDir()
-		err := d.Backup(backupServiceDir)
+		err := d.Backup()
 		require.ErrorContains(t, err, "failed to copy service file")
 	})
 
@@ -227,10 +233,14 @@ func TestLinuxServiceInstall(t *testing.T) {
 
 		newServiceFile := filepath.Join("testdata", "linux-service.service")
 
+		installDir := t.TempDir()
+		require.NoError(t, os.MkdirAll(path.BackupDir(installDir), 0775))
+
 		d := &linuxService{
 			newServiceFilePath:       newServiceFile,
 			installedServiceFilePath: installedServicePath,
 			serviceName:              "linux-service",
+			installDir:               installDir,
 			logger:                   zaptest.NewLogger(t),
 		}
 
@@ -241,12 +251,11 @@ func TestLinuxServiceInstall(t *testing.T) {
 		// We want to check that the service was actually loaded
 		requireServiceLoadedStatus(t, true)
 
-		backupServiceDir := t.TempDir()
 		// Write the backup file before creating it; Backup should
 		// not ever overwrite an existing file
-		os.WriteFile(path.BackupServiceFile(backupServiceDir), []byte("file exists"), 0600)
+		os.WriteFile(path.BackupServiceFile(installDir), []byte("file exists"), 0600)
 
-		err = d.Backup(backupServiceDir)
+		err = d.Backup()
 		require.ErrorContains(t, err, "failed to copy service file")
 	})
 }

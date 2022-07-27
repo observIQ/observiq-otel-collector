@@ -23,8 +23,8 @@ import (
 
 const defaultProductName = "observIQ Distro for OpenTelemetry Collector"
 
-// InstallDirFromRegistry gets the installation dir of the given product from the Windows Registry
-func InstallDirFromRegistry(logger *zap.Logger, productName string) (string, error) {
+// installDirFromRegistry gets the installation dir of the given product from the Windows Registry
+func installDirFromRegistry(logger *zap.Logger, productName string) (string, error) {
 	// this key is created when installing using the MSI installer
 	keyPath := fmt.Sprintf(`Software\Microsoft\Windows\CurrentVersion\Uninstall\%s`, productName)
 	key, err := registry.OpenKey(registry.LOCAL_MACHINE, keyPath, registry.READ)
@@ -49,5 +49,5 @@ func InstallDirFromRegistry(logger *zap.Logger, productName string) (string, err
 
 // InstallDir returns the filepath to the install directory
 func InstallDir(logger *zap.Logger) (string, error) {
-	return InstallDirFromRegistry(logger, defaultProductName)
+	return installDirFromRegistry(logger, defaultProductName)
 }

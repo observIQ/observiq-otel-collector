@@ -43,11 +43,12 @@ func WithServiceFile(svcFilePath string) Option {
 }
 
 // NewService returns an instance of the Service interface for managing the observiq-otel-collector service on the current OS.
-func NewService(logger *zap.Logger, latestPath string, opts ...Option) Service {
+func NewService(logger *zap.Logger, installDir string, opts ...Option) Service {
 	linuxSvc := &linuxService{
-		newServiceFilePath:       filepath.Join(path.ServiceFileDir(latestPath), "observiq-otel-collector.service"),
+		newServiceFilePath:       filepath.Join(path.ServiceFileDir(installDir), "observiq-otel-collector.service"),
 		serviceName:              linuxServiceName,
 		installedServiceFilePath: linuxServiceFilePath,
+		installDir:               installDir,
 		logger:                   logger.Named("linux-service"),
 	}
 
@@ -65,6 +66,7 @@ type linuxService struct {
 	serviceName string
 	// installedServiceFilePath is the file path to the installed unit file
 	installedServiceFilePath string
+	installDir               string
 	logger                   *zap.Logger
 }
 
@@ -162,8 +164,8 @@ func (l linuxService) Update() error {
 	return nil
 }
 
-func (l linuxService) Backup(outDir string) error {
-	if err := file.CopyFile(l.logger.Named("copy-file"), l.installedServiceFilePath, path.BackupServiceFile(outDir), false); err != nil {
+func (l linuxService) Backup() error {
+	if err := file.CopyFile(l.logger.Named("copy-file"), l.installedServiceFilePath, path.BackupServiceFile(l.installDir), false); err != nil {
 		return fmt.Errorf("failed to copy service file: %w", err)
 	}
 

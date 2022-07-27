@@ -48,12 +48,9 @@ func newUpdaterManager(defaultLogger *zap.Logger, tmpPath string) updaterManager
 // While waiting for Updater, it should kill the collector and we should never execute any code past running it
 func (m othersUpdaterManager) StartAndMonitorUpdater() error {
 	updaterPath := filepath.Join(m.tmpPath, updaterDir, updaterName)
-	absTmpPath, err := filepath.Abs(m.tmpPath)
-	if err != nil {
-		return fmt.Errorf("failed to get absolute path of tmp dir: %w", err)
-	}
+
 	//#nosec G204 -- paths are not determined via user input
-	cmd := exec.Command(updaterPath, "--tmpdir", absTmpPath)
+	cmd := exec.Command(updaterPath)
 
 	// We need to set the processor group id to something different so that at least on mac, when the
 	// collector dies the updater won't die as well

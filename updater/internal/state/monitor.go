@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/observiq/observiq-otel-collector/packagestate"
-	"github.com/observiq/observiq-otel-collector/updater/internal/path"
 	"github.com/open-telemetry/opamp-go/protobufs"
 	"go.uber.org/zap"
 )
@@ -51,13 +50,8 @@ type CollectorMonitor struct {
 }
 
 // NewCollectorMonitor create a new Monitor specifically for the collector
-func NewCollectorMonitor(logger *zap.Logger) (Monitor, error) {
+func NewCollectorMonitor(logger *zap.Logger, installDir string) (Monitor, error) {
 	namedLogger := logger.Named("collector-monitor")
-	// Get install directory
-	installDir, err := path.InstallDir(namedLogger.Named("install-dir"))
-	if err != nil {
-		return nil, fmt.Errorf("failed to determine install directory: %w", err)
-	}
 
 	// Create a collector monitor
 	packageStatusPath := filepath.Join(installDir, packagestate.DefaultFileName)
@@ -66,6 +60,7 @@ func NewCollectorMonitor(logger *zap.Logger) (Monitor, error) {
 	}
 
 	// Load the current status to ensure the package status file exists
+	var err error
 	collectorMonitor.currentStatus, err = collectorMonitor.stateManager.LoadStatuses()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load package statues: %w", err)

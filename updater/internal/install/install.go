@@ -33,26 +33,18 @@ import (
 type Installer struct {
 	latestDir  string
 	installDir string
-	tmpDir     string
 	svc        service.Service
 	logger     *zap.Logger
 }
 
 // NewInstaller returns a new instance of an Installer.
-func NewInstaller(logger *zap.Logger, tmpDir string) (*Installer, error) {
+func NewInstaller(logger *zap.Logger, installDir string) (*Installer, error) {
 	namedLogger := logger.Named("installer")
 
-	latestDir := path.LatestDirFromTempDir(tmpDir)
-	installDirPath, err := path.InstallDir(namedLogger.Named("install-dir"))
-	if err != nil {
-		return nil, fmt.Errorf("failed to determine install dir: %w", err)
-	}
-
 	return &Installer{
-		latestDir:  latestDir,
-		svc:        service.NewService(namedLogger, latestDir),
-		installDir: installDirPath,
-		tmpDir:     tmpDir,
+		latestDir:  path.LatestDir(installDir),
+		svc:        service.NewService(namedLogger, installDir),
+		installDir: installDir,
 		logger:     namedLogger,
 	}, nil
 }
@@ -69,7 +61,7 @@ func (i Installer) Install(rb rollback.ActionAppender) error {
 
 	// install files that go to installDirPath to their correct location,
 	// excluding any config files (logging.yaml, config.yaml, manager.yaml)
-	if err := copyFiles(i.logger, i.latestDir, i.installDir, i.tmpDir, rb); err != nil {
+	if err := installFiles(i.logger, i.latestDir, i.installDir, rb); err != nil {
 		return fmt.Errorf("failed to install new files: %w", err)
 	}
 	i.logger.Debug("Install artifacts copied")
@@ -78,7 +70,7 @@ func (i Installer) Install(rb rollback.ActionAppender) error {
 	if err := i.svc.Update(); err != nil {
 		return fmt.Errorf("failed to update service: %w", err)
 	}
-	rb.AppendAction(action.NewServiceUpdateAction(i.logger, i.tmpDir))
+	rb.AppendAction(action.NewServiceUpdateAction(i.logger, i.installDir))
 	i.logger.Debug("Updated service configuration")
 
 	// Start service
@@ -91,9 +83,9 @@ func (i Installer) Install(rb rollback.ActionAppender) error {
 	return nil
 }
 
-// copyFiles moves the file tree rooted at latestDirPath to installDirPath,
+// installFiles moves the file tree rooted at inputPath to installDir,
 // skipping configuration files. Appends CopyFileAction-s to the Rollbacker as it copies file.
-func copyFiles(logger *zap.Logger, inputPath, outputPath, tmpDir string, rb rollback.ActionAppender) error {
+func installFiles(logger *zap.Logger, inputPath, installDir string, rb rollback.ActionAppender) error {
 	err := filepath.WalkDir(inputPath, func(inPath string, d fs.DirEntry, err error) error {
 		switch {
 		case err != nil:
@@ -116,7 +108,7 @@ func copyFiles(logger *zap.Logger, inputPath, outputPath, tmpDir string, rb roll
 
 		// use the relative path to get the outPath (where we should write the file), and
 		// to get the out directory (which we will create if it does not exist).
-		outPath := filepath.Join(outputPath, relPath)
+		outPath := filepath.Join(installDir, relPath)
 		outDir := filepath.Dir(outPath)
 
 		if err := os.MkdirAll(outDir, 0750); err != nil {
@@ -125,7 +117,7 @@ func copyFiles(logger *zap.Logger, inputPath, outputPath, tmpDir string, rb roll
 
 		// We create the action record here, because we want to record whether the file exists or not before
 		// we open the file (which will end up creating the file).
-		cfa, err := action.NewCopyFileAction(logger, relPath, outPath, tmpDir)
+		cfa, err := action.NewCopyFileAction(logger, relPath, outPath, installDir)
 		if err != nil {
 			return fmt.Errorf("failed to create copy file action: %w", err)
 		}

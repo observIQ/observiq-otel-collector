@@ -51,9 +51,9 @@ func WithServiceFile(svcFilePath string) Option {
 }
 
 // NewService returns an instance of the Service interface for managing the observiq-otel-collector service on the current OS.
-func NewService(logger *zap.Logger, latestPath string, opts ...Option) Service {
+func NewService(logger *zap.Logger, installDir string, opts ...Option) Service {
 	winSvc := &windowsService{
-		newServiceFilePath: filepath.Join(path.ServiceFileDir(latestPath), "windows_service.json"),
+		newServiceFilePath: filepath.Join(path.ServiceFileDir(installDir), "windows_service.json"),
 		serviceName:        defaultServiceName,
 		productName:        defaultProductName,
 		logger:             logger.Named("windows-service"),
@@ -73,6 +73,7 @@ type windowsService struct {
 	serviceName string
 	// productName is the name of the installed product
 	productName string
+	installDir  string
 	logger      *zap.Logger
 }
 
@@ -126,14 +127,8 @@ func (w windowsService) install() error {
 		return fmt.Errorf("failed to read service config: %w", err)
 	}
 
-	// fetch the install directory so that we can determine the binary path that we need to execute
-	iDir, err := path.InstallDirFromRegistry(w.logger.Named("install-dir"), w.productName)
-	if err != nil {
-		return fmt.Errorf("failed to get install dir: %w", err)
-	}
-
 	// expand the arguments to be properly formatted (expand [INSTALLDIR], clean '&quot;' to be '"')
-	expandArguments(wsc, iDir)
+	expandArguments(wsc, w.installDir)
 
 	// Split the arguments; Arguments are "shell-like", in that they may contain spaces, and can be quoted to indicate that.
 	splitArgs, err := shellquote.Split(wsc.Service.Arguments)
@@ -155,7 +150,7 @@ func (w windowsService) install() error {
 
 	// Create the service using the service manager.
 	s, err := m.CreateService(w.serviceName,
-		filepath.Join(iDir, wsc.Path),
+		filepath.Join(w.installDir, wsc.Path),
 		mgr.Config{
 			Description:      wsc.Service.Description,
 			DisplayName:      wsc.Service.DisplayName,
@@ -233,7 +228,7 @@ func (w windowsService) Update() error {
 	return nil
 }
 
-func (w windowsService) Backup(outDir string) error {
+func (w windowsService) Backup() error {
 
 	wsc, err := w.currentServiceConfig()
 	if err != nil {
@@ -247,7 +242,7 @@ func (w windowsService) Backup(outDir string) error {
 	}
 
 	// Open with O_EXCL to fail if the file already exists
-	f, err := os.OpenFile(path.BackupServiceFile(outDir), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	f, err := os.OpenFile(path.BackupServiceFile(w.installDir), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to create backup service file: %w", err)
 	}
@@ -335,13 +330,8 @@ func (w windowsService) currentServiceConfig() (*windowsServiceConfig, error) {
 		return nil, fmt.Errorf("failed to split service BinaryPathName: %w", err)
 	}
 
-	iDir, err := path.InstallDirFromRegistry(w.logger.Named("install-dir"), w.productName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get install dir: %w", err)
-	}
-
 	// In the original config, the Path is the main binary path, relative to the install directory.
-	binaryPath, err := filepath.Rel(iDir, fullBinaryPath)
+	binaryPath, err := filepath.Rel(w.installDir, fullBinaryPath)
 	if err != nil {
 		return nil, fmt.Errorf("could not find service exe relative to install dir: %w", err)
 	}

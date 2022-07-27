@@ -32,8 +32,8 @@ type Service interface {
 	// Updates the old service configuration to the new one
 	Update() error
 
-	// Backup backs the current service configuration to the given directory
-	Backup(outDir string) error
+	// Backup backs the current service configuration
+	Backup() error
 }
 
 // replaceInstallDir replaces "[INSTALLDIR]" with the given installDir string.

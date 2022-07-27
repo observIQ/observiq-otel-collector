@@ -42,10 +42,10 @@ var _ RollbackableAction = (*CopyFileAction)(nil)
 var _ fmt.Stringer = (*CopyFileAction)(nil)
 
 // NewCopyFileAction creates a new CopyFileAction that indicates a file was copied from
-// fromPathRel into toPath. tmpDir is specified for rollback purposes.
+// fromPathRel into toPath. installDir is specified for rollback purposes.
 // NOTE: This action MUST be created BEFORE the action actually takes place; This allows
 // for previous existence of the file to be recorded.
-func NewCopyFileAction(logger *zap.Logger, fromPathRel, toPath, tmpDir string) (*CopyFileAction, error) {
+func NewCopyFileAction(logger *zap.Logger, fromPathRel, toPath, installDir string) (*CopyFileAction, error) {
 	fileExists := true
 	_, err := os.Stat(toPath)
 	switch {
@@ -60,7 +60,7 @@ func NewCopyFileAction(logger *zap.Logger, fromPathRel, toPath, tmpDir string) (
 		ToPath:      toPath,
 		// The file will be created if it doesn't already exist
 		FileCreated: !fileExists,
-		backupDir:   path.BackupDirFromTempDir(tmpDir),
+		backupDir:   path.BackupDir(installDir),
 		logger:      logger.Named("copy-file-action"),
 	}, nil
 }

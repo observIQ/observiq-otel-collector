@@ -26,40 +26,40 @@ import (
 func TestNewCopyFileAction(t *testing.T) {
 	t.Run("out file does not exist", func(t *testing.T) {
 		scratchDir := t.TempDir()
-		testTempDir := filepath.Join("testdata", "copyfileaction")
+		testInstallDir := filepath.Join("testdata", "copyfileaction")
 		outFile := filepath.Join(scratchDir, "test.txt")
-		inFile := filepath.Join(testTempDir, "latest", "test.txt")
+		inFile := filepath.Join(testInstallDir, "latest", "test.txt")
 
-		a, err := NewCopyFileAction(zaptest.NewLogger(t), inFile, outFile, testTempDir)
+		a, err := NewCopyFileAction(zaptest.NewLogger(t), inFile, outFile, testInstallDir)
 		require.NoError(t, err)
 
 		require.Equal(t, &CopyFileAction{
 			FromPathRel: inFile,
 			ToPath:      outFile,
 			FileCreated: true,
-			backupDir:   filepath.Join(testTempDir, "rollback"),
+			backupDir:   filepath.Join(testInstallDir, "tmp", "rollback"),
 			logger:      a.logger,
 		}, a)
 	})
 
 	t.Run("out file exists", func(t *testing.T) {
 		scratchDir := t.TempDir()
-		testTempDir := filepath.Join("testdata", "copyfileaction")
+		testInstallDir := filepath.Join("testdata", "copyfileaction")
 		outFile := filepath.Join(scratchDir, "test.txt")
-		inFile := filepath.Join(testTempDir, "latest", "test.txt")
+		inFile := filepath.Join(testInstallDir, "latest", "test.txt")
 
 		f, err := os.Create(outFile)
 		require.NoError(t, err)
 		require.NoError(t, f.Close())
 
-		a, err := NewCopyFileAction(zaptest.NewLogger(t), inFile, outFile, testTempDir)
+		a, err := NewCopyFileAction(zaptest.NewLogger(t), inFile, outFile, testInstallDir)
 		require.NoError(t, err)
 
 		require.Equal(t, &CopyFileAction{
 			FromPathRel: inFile,
 			ToPath:      outFile,
 			FileCreated: false,
-			backupDir:   filepath.Join(testTempDir, "rollback"),
+			backupDir:   filepath.Join(testInstallDir, "tmp", "rollback"),
 			logger:      a.logger,
 		}, a)
 	})
@@ -68,11 +68,11 @@ func TestNewCopyFileAction(t *testing.T) {
 func TestCopyFileActionRollback(t *testing.T) {
 	t.Run("deletes out file if it does not exist", func(t *testing.T) {
 		scratchDir := t.TempDir()
-		testTempDir := filepath.Join("testdata", "copyfileaction")
+		testInstallDir := filepath.Join("testdata", "copyfileaction")
 		outFile := filepath.Join(scratchDir, "test.txt")
-		inFile := filepath.Join(testTempDir, "latest", "test.txt")
+		inFile := filepath.Join(testInstallDir, "tmp", "latest", "test.txt")
 
-		a, err := NewCopyFileAction(zaptest.NewLogger(t), inFile, outFile, testTempDir)
+		a, err := NewCopyFileAction(zaptest.NewLogger(t), inFile, outFile, testInstallDir)
 		require.NoError(t, err)
 
 		inBytes, err := os.ReadFile(inFile)
@@ -89,11 +89,11 @@ func TestCopyFileActionRollback(t *testing.T) {
 
 	t.Run("Rolls back out file when it exists", func(t *testing.T) {
 		scratchDir := t.TempDir()
-		testTempDir := filepath.Join("testdata", "copyfileaction")
+		testInstallDir := filepath.Join("testdata", "copyfileaction")
 		outFile := filepath.Join(scratchDir, "test.txt")
 		inFileRel := "test.txt"
-		inFile := filepath.Join(testTempDir, "latest", inFileRel)
-		originalFile := filepath.Join(testTempDir, "rollback", "test.txt")
+		inFile := filepath.Join(testInstallDir, "tmp", "latest", inFileRel)
+		originalFile := filepath.Join(testInstallDir, "tmp", "rollback", "test.txt")
 
 		originalBytes, err := os.ReadFile(originalFile)
 		require.NoError(t, err)
@@ -101,7 +101,7 @@ func TestCopyFileActionRollback(t *testing.T) {
 		err = os.WriteFile(outFile, originalBytes, 0600)
 		require.NoError(t, err)
 
-		a, err := NewCopyFileAction(zaptest.NewLogger(t), inFileRel, outFile, testTempDir)
+		a, err := NewCopyFileAction(zaptest.NewLogger(t), inFileRel, outFile, testInstallDir)
 		require.NoError(t, err)
 
 		// Overwrite original file with latest file
@@ -124,10 +124,10 @@ func TestCopyFileActionRollback(t *testing.T) {
 
 	t.Run("Fails if backup file doesn't exist", func(t *testing.T) {
 		scratchDir := t.TempDir()
-		testTempDir := filepath.Join("testdata", "copyfileaction")
+		testInstallDir := filepath.Join("testdata", "copyfileaction")
 		outFile := filepath.Join(scratchDir, "test.txt")
-		inFile := filepath.Join(testTempDir, "latest", "not_in_backup.txt")
-		originalFile := filepath.Join(testTempDir, "rollback", "test.txt")
+		inFile := filepath.Join(testInstallDir, "tmp", "latest", "not_in_backup.txt")
+		originalFile := filepath.Join(testInstallDir, "tmp", "rollback", "test.txt")
 
 		// The latest file exists in the directory already, but for some reason is not copied to backup
 		originalBytes, err := os.ReadFile(originalFile)
@@ -136,7 +136,7 @@ func TestCopyFileActionRollback(t *testing.T) {
 		err = os.WriteFile(outFile, originalBytes, 0600)
 		require.NoError(t, err)
 
-		a, err := NewCopyFileAction(zaptest.NewLogger(t), inFile, outFile, testTempDir)
+		a, err := NewCopyFileAction(zaptest.NewLogger(t), inFile, outFile, testInstallDir)
 		require.NoError(t, err)
 
 		// Overwrite original file with latest file

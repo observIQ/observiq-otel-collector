@@ -16,38 +16,32 @@ package path
 
 import "path/filepath"
 
-const (
-	latestDirFragment         = "latest"
-	rollbackDirFragment       = "rollback"
-	serviceFileDirFragment    = "install"
-	serviceFileBackupFilename = "backup.service"
-	logDirFragment            = "log"
-	logFile                   = "updater.log"
-)
-
-// LatestDirFromTempDir gets the path to the "latest" dir, where the new artifacts are,
-// from the temporary directory
-func LatestDirFromTempDir(tmpDir string) string {
-	return filepath.Join(tmpDir, latestDirFragment)
+// TempDir gets the path to the "tmp" dir, used for staging updates & backups
+func TempDir(installDir string) string {
+	return filepath.Join(installDir, "tmp")
 }
 
-// BackupDirFromTempDir gets the path to the "rollback" dir, where current artifacts are backed up,
-// from the temporary directory
-func BackupDirFromTempDir(tmpDir string) string {
-	return filepath.Join(tmpDir, rollbackDirFragment)
+// LatestDir gets the path to the "latest" dir, where the new artifacts are unpacked.
+func LatestDir(installDir string) string {
+	return filepath.Join(TempDir(installDir), "latest")
 }
 
-// ServiceFileDir gets the directory of the service file definitions from the install dir
-func ServiceFileDir(installBaseDir string) string {
-	return filepath.Join(installBaseDir, serviceFileDirFragment)
+// BackupDir gets the path to the "rollback" dir, where current artifacts are backed up.
+func BackupDir(installDir string) string {
+	return filepath.Join(TempDir(installDir), "rollback")
 }
 
-// BackupServiceFile returns the full path to the backup service file from the service file directory path
-func BackupServiceFile(serviceFileDir string) string {
-	return filepath.Join(serviceFileDir, serviceFileBackupFilename)
+// ServiceFileDir gets the directory of the service file definitions
+func ServiceFileDir(installDir string) string {
+	return filepath.Join(installDir, "install")
+}
+
+// BackupServiceFile returns the full path to the backup service file
+func BackupServiceFile(installDir string) string {
+	return filepath.Join(BackupDir(installDir), "backup.service")
 }
 
 // LogFile returns the full path to the log file for the updater
 func LogFile(installDir string) string {
-	return filepath.Join(installDir, logDirFragment, logFile)
+	return filepath.Join(installDir, "log", "updater.log")
 }

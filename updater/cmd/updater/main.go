@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"time"
 
 	"github.com/observiq/observiq-otel-collector/packagestate"
@@ -36,7 +35,6 @@ import (
 
 func main() {
 	var showVersion = pflag.BoolP("version", "v", false, "Prints the version of the updater and exits, if specified.")
-	var tmpDir = pflag.String("tmpdir", "", "Temporary directory for artifacts. Parent of the 'rollback' directory.")
 	pflag.Parse()
 
 	if *showVersion {
@@ -44,12 +42,6 @@ func main() {
 		fmt.Println("commit:", version.GitHash())
 		fmt.Println("built at:", version.Date())
 		return
-	}
-
-	if *tmpDir == "" {
-		log.Println("The --tmpdir flag must be specified!")
-		pflag.PrintDefaults()
-		os.Exit(1)
 	}
 
 	// We can't create the zap logger yet, because we don't know the install dir, which is needed
@@ -65,17 +57,17 @@ func main() {
 	}
 
 	// Create a monitor and load the package status file
-	monitor, err := state.NewCollectorMonitor(logger)
+	monitor, err := state.NewCollectorMonitor(logger, installDir)
 	if err != nil {
 		logger.Fatal("Failed to create monitor", zap.Error(err))
 	}
 
-	installer, err := install.NewInstaller(logger, *tmpDir)
+	installer, err := install.NewInstaller(logger, installDir)
 	if err != nil {
 		logger.Fatal("Failed to create installer", zap.Error(err))
 	}
 
-	rb, err := rollback.NewRollbacker(logger, *tmpDir)
+	rb, err := rollback.NewRollbacker(logger, installDir)
 	if err != nil {
 		logger.Fatal("Failed to create rollbacker", zap.Error(err))
 	}

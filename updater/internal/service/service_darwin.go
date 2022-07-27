@@ -42,9 +42,9 @@ func WithServiceFile(svcFilePath string) Option {
 }
 
 // NewService returns an instance of the Service interface for managing the observiq-otel-collector service on the current OS.
-func NewService(logger *zap.Logger, latestPath string, opts ...Option) Service {
+func NewService(logger *zap.Logger, installDir string, opts ...Option) Service {
 	darwinSvc := &darwinService{
-		newServiceFilePath:       filepath.Join(path.ServiceFileDir(latestPath), "com.observiq.collector.plist"),
+		newServiceFilePath:       filepath.Join(path.ServiceFileDir(installDir), "com.observiq.collector.plist"),
 		installedServiceFilePath: darwinServiceFilePath,
 		installDir:               path.DarwinInstallDir,
 		logger:                   logger.Named("darwin-service"),
@@ -139,8 +139,8 @@ func (d darwinService) Update() error {
 	return nil
 }
 
-func (d darwinService) Backup(outDir string) error {
-	if err := file.CopyFile(d.logger.Named("copy-file"), d.installedServiceFilePath, path.BackupServiceFile(outDir), false); err != nil {
+func (d darwinService) Backup() error {
+	if err := file.CopyFile(d.logger.Named("copy-file"), d.installedServiceFilePath, path.BackupServiceFile(d.installDir), false); err != nil {
 		return fmt.Errorf("failed to copy service file: %w", err)
 	}
 
