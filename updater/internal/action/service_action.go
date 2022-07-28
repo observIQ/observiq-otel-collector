@@ -71,7 +71,7 @@ func NewServiceUpdateAction(logger *zap.Logger, installDir string) *ServiceUpdat
 	return &ServiceUpdateAction{
 		backupSvc: service.NewService(
 			namedLogger,
-			"", // latestDir doesn't matter here
+			installDir,
 			service.WithServiceFile(path.BackupServiceFile(installDir)),
 		),
 	}

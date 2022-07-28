@@ -56,6 +56,7 @@ func NewService(logger *zap.Logger, installDir string, opts ...Option) Service {
 		newServiceFilePath: filepath.Join(path.ServiceFileDir(installDir), "windows_service.json"),
 		serviceName:        defaultServiceName,
 		productName:        defaultProductName,
+		installDir:         installDir,
 		logger:             logger.Named("windows-service"),
 	}
 
