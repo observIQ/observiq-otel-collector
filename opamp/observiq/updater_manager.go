@@ -19,11 +19,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"go.uber.org/zap"
 )
 
 const updaterDir = "latest"
+const defaultShutdownWaitTimeout = 30 * time.Second
 
 // updaterManager handles working with the Updater binary
 type updaterManager interface {

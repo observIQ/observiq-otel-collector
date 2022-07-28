@@ -19,6 +19,7 @@ package observiq
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -39,10 +40,11 @@ func TestNewOthersUpdaterManager(t *testing.T) {
 				require.NoError(t, err)
 
 				expected := &othersUpdaterManager{
-					tmpPath:     tmpPath,
-					logger:      logger.Named("updater manager"),
-					updaterName: "updater",
-					cwd:         cwd,
+					tmpPath:             tmpPath,
+					logger:              logger.Named("updater manager"),
+					updaterName:         "updater",
+					cwd:                 cwd,
+					shutdownWaitTimeout: 30 * time.Second,
 				}
 
 				actual, err := newUpdaterManager(logger, tmpPath)
@@ -73,8 +75,8 @@ func TestStartAndMonitorUpdater(t *testing.T) {
 				updateManager, err := newUpdaterManager(zap.NewNop(), tmpDir)
 				require.NoError(t, err)
 
-				oum := updateManager.(*othersUpdaterManager)
-				oum.cwd = tmpDir
+				updateManager.(*othersUpdaterManager).cwd = tmpDir
+				updateManager.(*othersUpdaterManager).shutdownWaitTimeout = 5 * time.Second
 
 				err = updateManager.StartAndMonitorUpdater()
 
@@ -93,6 +95,7 @@ func TestStartAndMonitorUpdater(t *testing.T) {
 
 				updateManager.(*othersUpdaterManager).cwd = tmpDir
 				updateManager.(*othersUpdaterManager).updaterName = "badupdater"
+				updateManager.(*othersUpdaterManager).shutdownWaitTimeout = 5 * time.Second
 
 				err = updateManager.StartAndMonitorUpdater()
 
@@ -111,6 +114,7 @@ func TestStartAndMonitorUpdater(t *testing.T) {
 
 				updateManager.(*othersUpdaterManager).cwd = tmpDir
 				updateManager.(*othersUpdaterManager).updaterName = "quickupdater"
+				updateManager.(*othersUpdaterManager).shutdownWaitTimeout = 5 * time.Second
 
 				err = updateManager.StartAndMonitorUpdater()
 
@@ -129,6 +133,7 @@ func TestStartAndMonitorUpdater(t *testing.T) {
 
 				updateManager.(*othersUpdaterManager).cwd = tmpDir
 				updateManager.(*othersUpdaterManager).updaterName = "slowupdater"
+				updateManager.(*othersUpdaterManager).shutdownWaitTimeout = 5 * time.Second
 
 				err = updateManager.StartAndMonitorUpdater()
 
