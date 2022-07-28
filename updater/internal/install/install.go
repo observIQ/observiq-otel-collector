@@ -40,27 +40,20 @@ type Installer struct {
 }
 
 // NewInstaller returns a new instance of an Installer.
-func NewInstaller(logger *zap.Logger, installDir string) *Installer {
-	namedLogger := logger.Named("installer")
+func NewInstaller(logger *zap.Logger, installDir string, service service.Service) *Installer {
 	return &Installer{
 		latestDir:  path.LatestDir(installDir),
-		svc:        service.NewService(namedLogger, installDir),
+		svc:        service,
 		installDir: installDir,
 		backupDir:  path.BackupDir(installDir),
-		logger:     namedLogger,
+		logger:     logger.Named("installer"),
 	}
 }
 
 // Install installs the unpacked artifacts in latestDir to installDir,
-// as well as installing the new service file using the installer's Service interface
+// as well as installing the new service file using the installer's Service interface.
+// It then starts the service.
 func (i Installer) Install(rb rollback.ActionAppender) error {
-	// Stop service
-	if err := i.svc.Stop(); err != nil {
-		return fmt.Errorf("failed to stop service: %w", err)
-	}
-	rb.AppendAction(action.NewServiceStopAction(i.svc))
-	i.logger.Debug("Service stopped")
-
 	// If JMX jar exists outside of install directory, make sure that gets backed up
 	if err := i.attemptSpecialJMXJarInstall(rb); err != nil {
 		return fmt.Errorf("failed to process special JMX jar: %w", err)

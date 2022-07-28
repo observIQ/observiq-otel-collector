@@ -23,10 +23,12 @@ import (
 	"time"
 
 	"github.com/observiq/observiq-otel-collector/packagestate"
+	"github.com/observiq/observiq-otel-collector/updater/internal/action"
 	"github.com/observiq/observiq-otel-collector/updater/internal/install"
 	"github.com/observiq/observiq-otel-collector/updater/internal/logging"
 	"github.com/observiq/observiq-otel-collector/updater/internal/path"
 	"github.com/observiq/observiq-otel-collector/updater/internal/rollback"
+	"github.com/observiq/observiq-otel-collector/updater/internal/service"
 	"github.com/observiq/observiq-otel-collector/updater/internal/state"
 	"github.com/observiq/observiq-otel-collector/updater/internal/version"
 	"github.com/open-telemetry/opamp-go/protobufs"
@@ -68,12 +70,34 @@ func main() {
 	}
 
 	rb := rollback.NewRollbacker(logger, installDir)
+	// Stop the service before backing up the install directory;
+	// We want to stop as early as possible so that we don't hit the collector's timeout
+	// while it waits to be shutdown.
+	service := service.NewService(logger, installDir)
+	if err := service.Stop(); err != nil {
+		logger.Error("Failed to stop service", zap.Error(err))
+		fail(logger, installDir)
+	}
+	// Record that we stopped the service
+	rb.AppendAction(action.NewServiceStopAction(service))
+
+	logger.Debug("Stopped the service")
+
 	if err := rb.Backup(); err != nil {
 		logger.Error("Failed to backup", zap.Error(err))
+
+		// Set the state to failed before rollback so collector knows it failed
+		if setErr := monitor.SetState(packagestate.CollectorPackageName, protobufs.PackageStatus_InstallFailed, err); setErr != nil {
+			logger.Error("Failed to set state on backup failure", zap.Error(setErr))
+		}
+
+		rb.Rollback()
+
+		logger.Error("Rollback complete")
 		fail(logger, installDir)
 	}
 
-	installer := install.NewInstaller(logger, installDir)
+	installer := install.NewInstaller(logger, installDir, service)
 	if err := installer.Install(rb); err != nil {
 		logger.Error("Failed to install", zap.Error(err))
 
