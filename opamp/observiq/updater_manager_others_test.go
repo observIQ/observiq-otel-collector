@@ -17,6 +17,7 @@
 package observiq
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -34,13 +35,18 @@ func TestNewOthersUpdaterManager(t *testing.T) {
 			testFunc: func(t *testing.T) {
 				tmpPath := "/tmp"
 				logger := zap.NewNop()
+				cwd, err := os.Getwd()
+				require.NoError(t, err)
 
 				expected := &othersUpdaterManager{
-					tmpPath: tmpPath,
-					logger:  logger.Named("updater manager"),
+					tmpPath:     tmpPath,
+					logger:      logger.Named("updater manager"),
+					updaterName: "updater",
+					cwd:         cwd,
 				}
 
-				actual := newUpdaterManager(logger, tmpPath)
+				actual, err := newUpdaterManager(logger, tmpPath)
+				require.NoError(t, err)
 				require.Equal(t, expected, actual)
 			},
 		},
@@ -61,9 +67,16 @@ func TestStartAndMonitorUpdater(t *testing.T) {
 		{
 			desc: "Updater does not exist at path",
 			testFunc: func(t *testing.T) {
+				t.Parallel()
+
 				tmpDir := t.TempDir()
-				updateManager := newUpdaterManager(zap.NewNop(), tmpDir)
-				err := updateManager.StartAndMonitorUpdater()
+				updateManager, err := newUpdaterManager(zap.NewNop(), tmpDir)
+				require.NoError(t, err)
+
+				oum := updateManager.(*othersUpdaterManager)
+				oum.cwd = tmpDir
+
+				err = updateManager.StartAndMonitorUpdater()
 
 				assert.ErrorContains(t, err, "no such file or directory")
 			},
@@ -71,9 +84,17 @@ func TestStartAndMonitorUpdater(t *testing.T) {
 		{
 			desc: "Updater is not executable",
 			testFunc: func(t *testing.T) {
-				updaterName = "badupdater"
-				updateManager := newUpdaterManager(zap.NewNop(), "./testdata")
-				err := updateManager.StartAndMonitorUpdater()
+				t.Parallel()
+
+				tmpDir := t.TempDir()
+
+				updateManager, err := newUpdaterManager(zap.NewNop(), "./testdata")
+				require.NoError(t, err)
+
+				updateManager.(*othersUpdaterManager).cwd = tmpDir
+				updateManager.(*othersUpdaterManager).updaterName = "badupdater"
+
+				err = updateManager.StartAndMonitorUpdater()
 
 				assert.ErrorContains(t, err, "updater had an issue while starting:")
 			},
@@ -81,9 +102,17 @@ func TestStartAndMonitorUpdater(t *testing.T) {
 		{
 			desc: "Updater exits quickly",
 			testFunc: func(t *testing.T) {
-				updaterName = "quickupdater"
-				updateManager := newUpdaterManager(zap.NewNop(), "./testdata")
-				err := updateManager.StartAndMonitorUpdater()
+				t.Parallel()
+
+				tmpDir := t.TempDir()
+
+				updateManager, err := newUpdaterManager(zap.NewNop(), "./testdata")
+				require.NoError(t, err)
+
+				updateManager.(*othersUpdaterManager).cwd = tmpDir
+				updateManager.(*othersUpdaterManager).updaterName = "quickupdater"
+
+				err = updateManager.StartAndMonitorUpdater()
 
 				assert.EqualError(t, err, "updater failed to update collector")
 			},
@@ -91,9 +120,17 @@ func TestStartAndMonitorUpdater(t *testing.T) {
 		{
 			desc: "Updater times out",
 			testFunc: func(t *testing.T) {
-				updaterName = "slowupdater"
-				updateManager := newUpdaterManager(zap.NewNop(), "./testdata")
-				err := updateManager.StartAndMonitorUpdater()
+				t.Parallel()
+
+				tmpDir := t.TempDir()
+
+				updateManager, err := newUpdaterManager(zap.NewNop(), "./testdata")
+				require.NoError(t, err)
+
+				updateManager.(*othersUpdaterManager).cwd = tmpDir
+				updateManager.(*othersUpdaterManager).updaterName = "slowupdater"
+
+				err = updateManager.StartAndMonitorUpdater()
 
 				assert.ErrorContains(t, err, "updater failed to update collector")
 			},

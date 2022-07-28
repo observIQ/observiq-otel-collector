@@ -77,6 +77,10 @@ func NewClient(args *NewClientArgs) (opamp.Client, error) {
 	clientLogger := args.DefaultLogger.Named("opamp")
 
 	configManager := NewAgentConfigManager(args.DefaultLogger)
+	updaterManger, err := newUpdaterManager(clientLogger, args.TmpPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create updaterManager: %w", err)
+	}
 
 	observiqClient := &Client{
 		logger:                  clientLogger,
@@ -86,7 +90,7 @@ func NewClient(args *NewClientArgs) (opamp.Client, error) {
 		collector:               args.Collector,
 		currentConfig:           args.Config,
 		packagesStateProvider:   newPackagesStateProvider(clientLogger, packagestate.DefaultFileName),
-		updaterManager:          newUpdaterManager(clientLogger, args.TmpPath),
+		updaterManager:          updaterManger,
 	}
 
 	// Parse URL to determin scheme

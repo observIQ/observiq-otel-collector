@@ -19,6 +19,7 @@ package observiq
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
@@ -26,28 +27,42 @@ import (
 	"go.uber.org/zap"
 )
 
+const defaultWindowsUpdaterName = "updater.exe"
+
 // Ensure interface is satisfied
 var _ updaterManager = (*windowsUpdaterManager)(nil)
 
 // windowsUpdaterManager handles starting a Updater binary and watching it for failure with a timeout
 type windowsUpdaterManager struct {
-	tmpPath string
-	logger  *zap.Logger
+	tmpPath     string
+	updaterName string
+	cwd         string
+	logger      *zap.Logger
 }
 
 // newUpdaterManager creates a new updaterManager
-func newUpdaterManager(defaultLogger *zap.Logger, tmpPath string) updaterManager {
-	updaterName = "updater.exe"
-	return &windowsUpdaterManager{
-		tmpPath: filepath.Clean(tmpPath),
-		logger:  defaultLogger.Named("updater manager"),
+func newUpdaterManager(defaultLogger *zap.Logger, tmpPath string) (updaterManager, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cwd: %w", err)
 	}
+
+	return &windowsUpdaterManager{
+		tmpPath:     filepath.Clean(tmpPath),
+		logger:      defaultLogger.Named("updater manager"),
+		updaterName: defaultWindowsUpdaterName,
+		cwd:         cwd,
+	}, nil
 }
 
 // StartAndMonitorUpdater will start the Updater binary and wait to see if it finishes unexpectedly.
 // While waiting for Updater, it should kill the collector and we should never execute any code past running it
 func (m windowsUpdaterManager) StartAndMonitorUpdater() error {
-	updaterPath := filepath.Join(m.tmpPath, updaterDir, updaterName)
+	initialUpdaterPath := filepath.Join(m.tmpPath, updaterDir, m.updaterName)
+	updaterPath, err := copyExecutable(m.logger.Named("copy-executable"), initialUpdaterPath, m.cwd)
+	if err != nil {
+		return fmt.Errorf("failed to copy updater to cwd: %w", err)
+	}
 
 	//#nosec G204 -- paths are not determined via user input
 	cmd := exec.Command(updaterPath)

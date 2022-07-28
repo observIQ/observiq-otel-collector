@@ -17,7 +17,9 @@
 package observiq
 
 import (
+	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,13 +36,18 @@ func TestNewWindowsUpdaterManager(t *testing.T) {
 			testFunc: func(t *testing.T) {
 				tmpPath := "\\tmp"
 				logger := zap.NewNop()
+				cwd, err := os.Getwd()
+				require.NoError(t, err)
 
 				expected := &windowsUpdaterManager{
-					tmpPath: tmpPath,
-					logger:  logger.Named("updater manager"),
+					tmpPath:     tmpPath,
+					logger:      logger.Named("updater manager"),
+					updaterName: "updater.exe",
+					cwd:         cwd,
 				}
 
-				actual := newUpdaterManager(logger, tmpPath)
+				actual, err := newUpdaterManager(logger, tmpPath)
+				require.NoError(t, err)
 				require.Equal(t, expected, actual)
 			},
 		},
@@ -61,19 +68,30 @@ func TestStartAndMonitorUpdater(t *testing.T) {
 		{
 			desc: "Updater does not exist at path",
 			testFunc: func(t *testing.T) {
-				tmpDir := t.TempDir()
-				updateManager := newUpdaterManager(zap.NewNop(), tmpDir)
-				err := updateManager.StartAndMonitorUpdater()
+				t.Parallel()
 
-				assert.ErrorContains(t, err, "file does not exist")
+				tmpDir := t.TempDir()
+				updateManager, err := newUpdaterManager(zap.NewNop(), tmpDir)
+				require.NoError(t, err)
+
+				updateManager.(*windowsUpdaterManager).cwd = tmpDir
+				err = updateManager.StartAndMonitorUpdater()
+
+				assert.ErrorContains(t, err, "failed to copy updater to cwd")
 			},
 		},
 		{
 			desc: "Updater is not executable",
 			testFunc: func(t *testing.T) {
-				updaterName = "badupdater"
-				updateManager := newUpdaterManager(zap.NewNop(), "./testdata")
-				err := updateManager.StartAndMonitorUpdater()
+				t.Parallel()
+
+				tmpDir := t.TempDir()
+				updateManager, err := newUpdaterManager(zap.NewNop(), "./testdata")
+				require.NoError(t, err)
+
+				updateManager.(*windowsUpdaterManager).cwd = tmpDir
+				updateManager.(*windowsUpdaterManager).updaterName = "badupdater"
+				err = updateManager.StartAndMonitorUpdater()
 
 				assert.ErrorContains(t, err, "updater had an issue while starting:")
 			},
@@ -81,9 +99,15 @@ func TestStartAndMonitorUpdater(t *testing.T) {
 		{
 			desc: "Updater exits quickly",
 			testFunc: func(t *testing.T) {
-				updateManager := newUpdaterManager(zap.NewNop(), "./testdata")
-				updaterName = "quickupdater.exe"
-				err := updateManager.StartAndMonitorUpdater()
+				t.Parallel()
+
+				tmpDir := t.TempDir()
+				updateManager, err := newUpdaterManager(zap.NewNop(), "./testdata")
+				require.NoError(t, err)
+
+				updateManager.(*windowsUpdaterManager).cwd = tmpDir
+				updateManager.(*windowsUpdaterManager).updaterName = "quickupdater.exe"
+				err = updateManager.StartAndMonitorUpdater()
 
 				assert.EqualError(t, err, "updater failed to update collector")
 			},
@@ -91,11 +115,21 @@ func TestStartAndMonitorUpdater(t *testing.T) {
 		{
 			desc: "Updater times out",
 			testFunc: func(t *testing.T) {
-				updateManager := newUpdaterManager(zap.NewNop(), "./testdata")
-				updaterName = "slowupdater.exe"
-				err := updateManager.StartAndMonitorUpdater()
+				t.Parallel()
+
+				tmpDir := t.TempDir()
+				updateManager, err := newUpdaterManager(zap.NewNop(), "./testdata")
+				require.NoError(t, err)
+
+				updateManager.(*windowsUpdaterManager).cwd = tmpDir
+				updateManager.(*windowsUpdaterManager).updaterName = "slowupdater.exe"
+				err = updateManager.StartAndMonitorUpdater()
 
 				assert.ErrorContains(t, err, "updater failed to update collector")
+
+				// The slow updater needs time to shut down, so we wait an extra second.
+				// If the updater isn't killed, the tmpDir cannot be deleted and the test fails.
+				time.Sleep(1 * time.Second)
 			},
 		},
 	}
