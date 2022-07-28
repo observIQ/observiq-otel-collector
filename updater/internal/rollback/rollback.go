@@ -45,20 +45,15 @@ type Rollbacker struct {
 }
 
 // NewRollbacker returns a new Rollbacker
-func NewRollbacker(logger *zap.Logger, installDir string) (*Rollbacker, error) {
+func NewRollbacker(logger *zap.Logger, installDir string) *Rollbacker {
 	namedLogger := logger.Named("rollbacker")
-
-	installDir, err := path.InstallDir(namedLogger.Named("install-dir"))
-	if err != nil {
-		return nil, fmt.Errorf("failed to determine install dir: %w", err)
-	}
 
 	return &Rollbacker{
 		backupDir:   path.BackupDir(installDir),
 		installDir:  installDir,
 		logger:      namedLogger,
 		originalSvc: service.NewService(namedLogger, installDir),
-	}, nil
+	}
 }
 
 // AppendAction records the action that was performed, so that it may be undone later.

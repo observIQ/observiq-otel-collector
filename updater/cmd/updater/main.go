@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/observiq/observiq-otel-collector/packagestate"
@@ -48,34 +49,31 @@ func main() {
 	// to create the logger. So we pass a Nop logger here.
 	installDir, err := path.InstallDir(zap.NewNop())
 	if err != nil {
+		// Can't use "fail" here since we don't know the install directory
 		log.Fatalf("Failed to determine install directory: %s", err)
 	}
 
 	logger, err := logging.NewLogger(installDir)
 	if err != nil {
-		log.Fatalf("Failed to create logger: %s", err)
+		log.Default().Printf("Failed to create logger: %s\n", err)
+		// No logger, can't really log if we fail to remove tmpdir
+		fail(zap.NewNop(), installDir)
 	}
 
 	// Create a monitor and load the package status file
 	monitor, err := state.NewCollectorMonitor(logger, installDir)
 	if err != nil {
-		logger.Fatal("Failed to create monitor", zap.Error(err))
+		logger.Error("Failed to create monitor", zap.Error(err))
+		fail(logger, installDir)
 	}
 
-	installer, err := install.NewInstaller(logger, installDir)
-	if err != nil {
-		logger.Fatal("Failed to create installer", zap.Error(err))
-	}
-
-	rb, err := rollback.NewRollbacker(logger, installDir)
-	if err != nil {
-		logger.Fatal("Failed to create rollbacker", zap.Error(err))
-	}
-
+	rb := rollback.NewRollbacker(logger, installDir)
 	if err := rb.Backup(); err != nil {
-		logger.Fatal("Failed to backup", zap.Error(err))
+		logger.Error("Failed to backup", zap.Error(err))
+		fail(logger, installDir)
 	}
 
+	installer := install.NewInstaller(logger, installDir)
 	if err := installer.Install(rb); err != nil {
 		logger.Error("Failed to install", zap.Error(err))
 
@@ -83,8 +81,11 @@ func main() {
 		if setErr := monitor.SetState(packagestate.CollectorPackageName, protobufs.PackageStatus_InstallFailed, err); setErr != nil {
 			logger.Error("Failed to set state on install failure", zap.Error(setErr))
 		}
+
 		rb.Rollback()
-		logger.Fatal("Rollback complete")
+
+		logger.Error("Rollback complete")
+		fail(logger, installDir)
 	}
 
 	// Create a context with timeout to wait for a success or failed status
@@ -106,9 +107,26 @@ func main() {
 		}
 
 		rb.Rollback()
-		logger.Fatal("Rollback complete")
+
+		logger.Error("Rollback complete")
+		fail(logger, installDir)
 	}
 
+	removeTmpDir(logger, installDir)
 	// Successful update
 	logger.Info("Update Complete")
+}
+
+// fail removes the temporary directory, and calls os.Exit(1)
+func fail(logger *zap.Logger, installDir string) {
+	removeTmpDir(logger, installDir)
+	os.Exit(1)
+}
+
+// removeTmpDir removes the temporary directory and any files in it.
+func removeTmpDir(logger *zap.Logger, installDir string) {
+	err := os.RemoveAll(path.TempDir(installDir))
+	if err != nil {
+		logger.Error("failed to remove temporary directory", zap.Error(err))
+	}
 }

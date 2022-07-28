@@ -38,15 +38,14 @@ type Installer struct {
 }
 
 // NewInstaller returns a new instance of an Installer.
-func NewInstaller(logger *zap.Logger, installDir string) (*Installer, error) {
+func NewInstaller(logger *zap.Logger, installDir string) *Installer {
 	namedLogger := logger.Named("installer")
-
 	return &Installer{
 		latestDir:  path.LatestDir(installDir),
 		svc:        service.NewService(namedLogger, installDir),
 		installDir: installDir,
 		logger:     namedLogger,
-	}, nil
+	}
 }
 
 // Install installs the unpacked artifacts in latestDir to installDir,
