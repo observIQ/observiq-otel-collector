@@ -80,7 +80,7 @@ func main() {
 		logger.Error("Failed to install", zap.Error(err))
 
 		// Set the state to failed before rollback so collector knows it failed
-		if setErr := monitor.SetState(packagestate.DefaultFileName, protobufs.PackageStatus_InstallFailed, err); setErr != nil {
+		if setErr := monitor.SetState(packagestate.CollectorPackageName, protobufs.PackageStatus_InstallFailed, err); setErr != nil {
 			logger.Error("Failed to set state on install failure", zap.Error(setErr))
 		}
 		rb.Rollback()
@@ -94,13 +94,13 @@ func main() {
 	logger.Debug("Installation successful, begin monitor for success")
 
 	// Monitor the install state
-	if err := monitor.MonitorForSuccess(checkCtx, packagestate.DefaultFileName); err != nil {
+	if err := monitor.MonitorForSuccess(checkCtx, packagestate.CollectorPackageName); err != nil {
 		logger.Error("Failed to install", zap.Error(err))
 
 		// If this is not an error due to the collector setting a failed status we need to set a failed status
 		if !errors.Is(err, state.ErrFailedStatus) {
 			// Set the state to failed before rollback so collector knows it failed
-			if setErr := monitor.SetState(packagestate.DefaultFileName, protobufs.PackageStatus_InstallFailed, err); setErr != nil {
+			if setErr := monitor.SetState(packagestate.CollectorPackageName, protobufs.PackageStatus_InstallFailed, err); setErr != nil {
 				logger.Error("Failed to set state on install failure", zap.Error(setErr))
 			}
 		}
