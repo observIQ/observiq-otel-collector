@@ -40,10 +40,11 @@ func TestNewWindowsUpdaterManager(t *testing.T) {
 				require.NoError(t, err)
 
 				expected := &windowsUpdaterManager{
-					tmpPath:     tmpPath,
-					logger:      logger.Named("updater manager"),
-					updaterName: "updater.exe",
-					cwd:         cwd,
+					tmpPath:             tmpPath,
+					logger:              logger.Named("updater manager"),
+					updaterName:         "updater.exe",
+					cwd:                 cwd,
+					shutdownWaitTimeout: 30 * time.Second,
 				}
 
 				actual, err := newUpdaterManager(logger, tmpPath)
@@ -75,6 +76,8 @@ func TestStartAndMonitorUpdater(t *testing.T) {
 				require.NoError(t, err)
 
 				updateManager.(*windowsUpdaterManager).cwd = tmpDir
+				updateManager.(*windowsUpdaterManager).shutdownWaitTimeout = 5 * time.Second
+
 				err = updateManager.StartAndMonitorUpdater()
 
 				assert.ErrorContains(t, err, "failed to copy updater to cwd")
@@ -91,6 +94,8 @@ func TestStartAndMonitorUpdater(t *testing.T) {
 
 				updateManager.(*windowsUpdaterManager).cwd = tmpDir
 				updateManager.(*windowsUpdaterManager).updaterName = "badupdater"
+				updateManager.(*windowsUpdaterManager).shutdownWaitTimeout = 5 * time.Second
+
 				err = updateManager.StartAndMonitorUpdater()
 
 				assert.ErrorContains(t, err, "updater had an issue while starting:")
@@ -107,6 +112,8 @@ func TestStartAndMonitorUpdater(t *testing.T) {
 
 				updateManager.(*windowsUpdaterManager).cwd = tmpDir
 				updateManager.(*windowsUpdaterManager).updaterName = "quickupdater.exe"
+				updateManager.(*windowsUpdaterManager).shutdownWaitTimeout = 5 * time.Second
+
 				err = updateManager.StartAndMonitorUpdater()
 
 				assert.EqualError(t, err, "updater failed to update collector")
@@ -123,6 +130,8 @@ func TestStartAndMonitorUpdater(t *testing.T) {
 
 				updateManager.(*windowsUpdaterManager).cwd = tmpDir
 				updateManager.(*windowsUpdaterManager).updaterName = "slowupdater.exe"
+				updateManager.(*windowsUpdaterManager).shutdownWaitTimeout = 5 * time.Second
+
 				err = updateManager.StartAndMonitorUpdater()
 
 				assert.ErrorContains(t, err, "updater failed to update collector")
