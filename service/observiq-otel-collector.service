@@ -13,7 +13,7 @@ Environment=OIQ_OTEL_COLLECTOR_STORAGE=/opt/observiq-otel-collector/storage
 WorkingDirectory=/opt/observiq-otel-collector
 ExecStart=/opt/observiq-otel-collector/observiq-otel-collector --config config.yaml
 SuccessExitStatus=0
-TimeoutSec=120
+TimeoutSec=20
 StandardOutput=journal
 Restart=on-failure
 RestartSec=5s
