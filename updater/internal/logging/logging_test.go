@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -26,16 +25,16 @@ import (
 
 func TestNewLogger(t *testing.T) {
 	t.Run("Existing file is removed", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
-			// Skip on windows, because the log file will still be open
-			// when the test attempts to remove the temp dir, which ends up making
-			// the test fail.
-			t.SkipNow()
-		}
-		tmpDir := t.TempDir()
+		// We don't use t.TempDir here, because we can't clean up the out directory on windows.
+		// We also don't clean up the out directory; It's in the temporary directory and may be cleaned up manually at any time.
+		tmpDir, err := os.MkdirTemp("", "test-logger-existing-file")
+		require.NoError(t, err)
+		// Remove previous log directory if it exists
+		require.NoError(t, os.RemoveAll(filepath.Join(tmpDir, "log")))
 		require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "log"), 0775))
 
-		updaterLogPath := filepath.Join(tmpDir, "log", "updater.log")
+		updaterLogPath, err := filepath.Abs(filepath.Join(tmpDir, "log", "updater.log"))
+		require.NoError(t, err)
 
 		initialBytes := []byte("Some existing bytes")
 		require.NoError(t, os.WriteFile(updaterLogPath, initialBytes, 0660))
@@ -57,16 +56,14 @@ func TestNewLogger(t *testing.T) {
 	})
 
 	t.Run("Logger creates file if existing file does not exist", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
-			// Skip on windows, because the log file will still be open
-			// when the test attempts to remove the temp dir, which ends up making
-			// the test fail.
-			t.SkipNow()
-		}
-		tmpDir := t.TempDir()
+		tmpDir, err := os.MkdirTemp("", "test-logger-no-existing-file")
+		require.NoError(t, err)
+		// Remove previous log directory if it exists
+		require.NoError(t, os.RemoveAll(filepath.Join(tmpDir, "log")))
 		require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "log"), 0775))
 
-		updaterLogPath := filepath.Join(tmpDir, "log", "updater.log")
+		updaterLogPath, err := filepath.Abs(filepath.Join(tmpDir, "log", "updater.log"))
+		require.NoError(t, err)
 
 		logger, err := NewLogger(tmpDir)
 		require.NoError(t, err)
