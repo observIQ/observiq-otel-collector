@@ -15,6 +15,7 @@
 package rollback
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -74,6 +75,18 @@ func (r Rollbacker) Backup() error {
 		return fmt.Errorf("failed to copy files to backup dir: %w", err)
 	}
 
+	// If JMX jar exists outside of install directory, make sure that gets backed up
+	jarPath := path.SpecialJMXJarFile(r.installDir)
+	_, err := os.Stat(jarPath)
+	switch {
+	case err == nil:
+		if err := backupFile(r.logger, jarPath, r.backupDir); err != nil {
+			return fmt.Errorf("failed to copy JMX jar to jar backup dir: %w", err)
+		}
+	case !errors.Is(err, os.ErrNotExist):
+		return fmt.Errorf("failed determine where currently installed JMX jar is: %w", err)
+	}
+
 	// Backup the service configuration so we can reload it in case of rollback
 	if err := r.originalSvc.Backup(); err != nil {
 		return fmt.Errorf("failed to backup service configuration: %w", err)
@@ -107,7 +120,7 @@ func backupFiles(logger *zap.Logger, installDir, outputPath string) error {
 
 		fullPath, absErr := filepath.Abs(inPath)
 		if absErr != nil {
-			return fmt.Errorf("failed to determine absolute path of file: %w", err)
+			return fmt.Errorf("failed to determine absolute path of file: %w", absErr)
 		}
 
 		switch {
@@ -140,7 +153,7 @@ func backupFiles(logger *zap.Logger, installDir, outputPath string) error {
 		}
 
 		// Fail if copying the input file to the output file would fail
-		if err := file.CopyFile(logger.Named("copy-file"), inPath, outPath, false); err != nil {
+		if err := file.CopyFile(logger.Named("copy-file"), inPath, outPath, false, false); err != nil {
 			return fmt.Errorf("failed to copy file: %w", err)
 		}
 
@@ -149,6 +162,27 @@ func backupFiles(logger *zap.Logger, installDir, outputPath string) error {
 
 	if err != nil {
 		return fmt.Errorf("failed to walk latest dir: %w", err)
+	}
+
+	return nil
+}
+
+// backupFile copies original file to output path
+func backupFile(logger *zap.Logger, inPath, outputDirPath string) error {
+	baseInPath := filepath.Base(inPath)
+
+	// use the relative path to get the outPath (where we should write the file), and
+	// to get the out directory (which we will create if it does not exist).
+	outPath := filepath.Join(outputDirPath, baseInPath)
+	outDir := filepath.Dir(outPath)
+
+	if err := os.MkdirAll(outDir, 0750); err != nil {
+		return fmt.Errorf("failed to create dir: %w", err)
+	}
+
+	// Fail if copying the input file to the output file would fail
+	if err := file.CopyFile(logger.Named("copy-file"), inPath, outPath, false, false); err != nil {
+		return fmt.Errorf("failed to copy file: %w", err)
 	}
 
 	return nil

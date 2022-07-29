@@ -26,7 +26,7 @@ import (
 
 // CopyFile copies the file from pathIn to pathOut.
 // If the file does not exist, it is created. If the file does exist, it is truncated before writing.
-func CopyFile(logger *zap.Logger, pathIn, pathOut string, overwrite bool) error {
+func CopyFile(logger *zap.Logger, pathIn, pathOut string, overwrite bool, useInFilePermBackup bool) error {
 	pathInClean := filepath.Clean(pathIn)
 
 	// Open the input file for reading.
@@ -43,21 +43,41 @@ func CopyFile(logger *zap.Logger, pathIn, pathOut string, overwrite bool) error 
 
 	pathOutClean := filepath.Clean(pathOut)
 	fileMode := fs.FileMode(0600)
-
 	flags := os.O_CREATE | os.O_WRONLY
 	if overwrite {
 		// If we are OK to overwrite, we will truncate the file on open
 		flags |= os.O_TRUNC
 
-		// Save old file's permissions and delete it first if it exists
-		fileOutInfo, _ := os.Stat(pathOutClean)
-		if fileOutInfo != nil {
-			fileMode = fileOutInfo.Mode()
+		// Try to save old file's permissions
+		outFileInfo, _ := os.Stat(pathOutClean)
+		if outFileInfo != nil {
+			fileMode = outFileInfo.Mode()
+		} else if useInFilePermBackup {
+			// Use the new file's permissions as a backup and don't fail on error (best chance for rollback)
+			inFileInfo, err := inFile.Stat()
+			switch {
+			case err != nil:
+				logger.Error("failed to retrieve fileinfo for input file", zap.Error(err))
+			case inFileInfo != nil:
+				fileMode = inFileInfo.Mode()
+			}
 		}
-		_ = os.Remove(pathOutClean)
+
+		// Remove old file to prevent issues with mac
+		if err = os.Remove(pathOutClean); err != nil {
+			logger.Debug("Failed to remove output file", zap.Error(err))
+		}
 	} else {
 		// This flag will make OpenFile error if the file already exists
 		flags |= os.O_EXCL
+
+		// Use the new file's permissions and fail if there's an issue (want to fail for backup)
+		inFileInfo, err := inFile.Stat()
+		if err != nil {
+			return fmt.Errorf("failed to retrive fileinfo for input file: %w", err)
+		}
+
+		fileMode = inFileInfo.Mode()
 	}
 
 	// Open the output file, creating it if it does not exist and truncating it.

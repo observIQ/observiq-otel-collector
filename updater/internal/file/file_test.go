@@ -32,7 +32,7 @@ func TestCopyFile(t *testing.T) {
 		inFile := filepath.Join("testdata", "test.txt")
 		outFile := filepath.Join(tmpDir, "test.txt")
 
-		err := CopyFile(zaptest.NewLogger(t), inFile, outFile, true)
+		err := CopyFile(zaptest.NewLogger(t), inFile, outFile, true, false)
 		require.NoError(t, err)
 		require.FileExists(t, outFile)
 
@@ -52,6 +52,34 @@ func TestCopyFile(t *testing.T) {
 		}
 	})
 
+	t.Run("Copies file when output does not exist and uses new permissions when argument set", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		inFile := filepath.Join("testdata", "test.txt")
+		outFile := filepath.Join(tmpDir, "test.txt")
+
+		err := CopyFile(zaptest.NewLogger(t), inFile, outFile, true, true)
+		require.NoError(t, err)
+		require.FileExists(t, outFile)
+
+		contentsIn, err := os.ReadFile(inFile)
+		require.NoError(t, err)
+
+		contentsOut, err := os.ReadFile(outFile)
+		require.NoError(t, err)
+
+		require.Equal(t, contentsIn, contentsOut)
+
+		fio, err := os.Stat(outFile)
+		require.NoError(t, err)
+		fii, err := os.Stat(outFile)
+		require.NoError(t, err)
+		// file mode on windows acts unlike unix, we'll only check for this on linux/darwin
+		if runtime.GOOS != "windows" {
+			require.Equal(t, fii.Mode(), fio.Mode())
+		}
+	})
+
 	t.Run("Copies file when output already exists", func(t *testing.T) {
 		tmpDir := t.TempDir()
 
@@ -64,7 +92,10 @@ func TestCopyFile(t *testing.T) {
 		err = os.WriteFile(outFile, []byte("This is a file that already exists"), 0640)
 		require.NoError(t, err)
 
-		err = CopyFile(zaptest.NewLogger(t), inFile, outFile, true)
+		fioOrig, err := os.Stat(outFile)
+		require.NoError(t, err)
+
+		err = CopyFile(zaptest.NewLogger(t), inFile, outFile, true, false)
 		require.NoError(t, err)
 		require.FileExists(t, outFile)
 
@@ -72,11 +103,11 @@ func TestCopyFile(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, contentsIn, contentsOut)
 
-		fi, err := os.Stat(outFile)
+		fio, err := os.Stat(outFile)
 		require.NoError(t, err)
 		// file mode on windows acts unlike unix, we'll only check for this on linux/darwin
 		if runtime.GOOS != "windows" {
-			require.Equal(t, fs.FileMode(0640), fi.Mode())
+			require.Equal(t, fioOrig.Mode(), fio.Mode())
 		}
 	})
 
@@ -86,7 +117,7 @@ func TestCopyFile(t *testing.T) {
 		inFile := filepath.Join("testdata", "does-not-exist.txt")
 		outFile := filepath.Join(tmpDir, "test.txt")
 
-		err := CopyFile(zaptest.NewLogger(t), inFile, outFile, true)
+		err := CopyFile(zaptest.NewLogger(t), inFile, outFile, true, false)
 		require.ErrorContains(t, err, "failed to open input file")
 		require.NoFileExists(t, outFile)
 	})
@@ -100,7 +131,7 @@ func TestCopyFile(t *testing.T) {
 		err := os.WriteFile(outFile, []byte("This is a file that already exists"), 0600)
 		require.NoError(t, err)
 
-		err = CopyFile(zaptest.NewLogger(t), inFile, outFile, true)
+		err = CopyFile(zaptest.NewLogger(t), inFile, outFile, true, false)
 		require.ErrorContains(t, err, "failed to open input file")
 		require.FileExists(t, outFile)
 
@@ -118,7 +149,7 @@ func TestCopyFile(t *testing.T) {
 		err := os.WriteFile(outFile, []byte("This is a file that already exists"), 0640)
 		require.NoError(t, err)
 
-		err = CopyFile(zaptest.NewLogger(t), inFile, outFile, false)
+		err = CopyFile(zaptest.NewLogger(t), inFile, outFile, false, false)
 		require.ErrorContains(t, err, "failed to open output file")
 		require.FileExists(t, outFile)
 
@@ -140,7 +171,7 @@ func TestCopyFile(t *testing.T) {
 		inFile := filepath.Join("testdata", "test.txt")
 		outFile := filepath.Join(tmpDir, "test.txt")
 
-		err := CopyFile(zaptest.NewLogger(t), inFile, outFile, false)
+		err := CopyFile(zaptest.NewLogger(t), inFile, outFile, false, false)
 		require.NoError(t, err)
 		require.FileExists(t, outFile)
 
@@ -152,11 +183,13 @@ func TestCopyFile(t *testing.T) {
 
 		require.Equal(t, contentsIn, contentsOut)
 
-		fi, err := os.Stat(outFile)
+		fio, err := os.Stat(outFile)
+		require.NoError(t, err)
+		fii, err := os.Stat(outFile)
 		require.NoError(t, err)
 		// file mode on windows acts unlike unix, we'll only check for this on linux/darwin
 		if runtime.GOOS != "windows" {
-			require.Equal(t, fs.FileMode(0600), fi.Mode())
+			require.Equal(t, fii.Mode(), fio.Mode())
 		}
 	})
 }

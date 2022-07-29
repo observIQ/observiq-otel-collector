@@ -21,7 +21,6 @@ import (
 	"path/filepath"
 
 	"github.com/observiq/observiq-otel-collector/updater/internal/file"
-	"github.com/observiq/observiq-otel-collector/updater/internal/path"
 	"go.uber.org/zap"
 )
 
@@ -42,10 +41,10 @@ var _ RollbackableAction = (*CopyFileAction)(nil)
 var _ fmt.Stringer = (*CopyFileAction)(nil)
 
 // NewCopyFileAction creates a new CopyFileAction that indicates a file was copied from
-// fromPathRel into toPath. installDir is specified for rollback purposes.
+// fromPathRel into toPath. backupDir is specified for rollback purposes.
 // NOTE: This action MUST be created BEFORE the action actually takes place; This allows
 // for previous existence of the file to be recorded.
-func NewCopyFileAction(logger *zap.Logger, fromPathRel, toPath, installDir string) (*CopyFileAction, error) {
+func NewCopyFileAction(logger *zap.Logger, fromPathRel, toPath, backupDir string) (*CopyFileAction, error) {
 	fileExists := true
 	_, err := os.Stat(toPath)
 	switch {
@@ -60,7 +59,7 @@ func NewCopyFileAction(logger *zap.Logger, fromPathRel, toPath, installDir strin
 		ToPath:      toPath,
 		// The file will be created if it doesn't already exist
 		FileCreated: !fileExists,
-		backupDir:   path.BackupDir(installDir),
+		backupDir:   backupDir,
 		logger:      logger.Named("copy-file-action"),
 	}, nil
 }
@@ -76,7 +75,7 @@ func (c CopyFileAction) Rollback() error {
 
 	// join the relative path to the backup directory to get the location of the backup path
 	backupFilePath := filepath.Join(c.backupDir, c.FromPathRel)
-	if err := file.CopyFile(c.logger.Named("copy-file"), backupFilePath, c.ToPath, true); err != nil {
+	if err := file.CopyFile(c.logger.Named("copy-file"), backupFilePath, c.ToPath, true, true); err != nil {
 		return fmt.Errorf("failed to copy file: %w", err)
 	}
 

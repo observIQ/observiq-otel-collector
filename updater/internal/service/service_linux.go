@@ -165,7 +165,7 @@ func (l linuxService) Update() error {
 }
 
 func (l linuxService) Backup() error {
-	if err := file.CopyFile(l.logger.Named("copy-file"), l.installedServiceFilePath, path.BackupServiceFile(l.installDir), false); err != nil {
+	if err := file.CopyFile(l.logger.Named("copy-file"), l.installedServiceFilePath, path.BackupServiceFile(l.installDir), false, false); err != nil {
 		return fmt.Errorf("failed to copy service file: %w", err)
 	}
 

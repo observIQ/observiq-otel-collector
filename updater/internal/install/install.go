@@ -15,6 +15,7 @@
 package install
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -33,6 +34,7 @@ import (
 type Installer struct {
 	latestDir  string
 	installDir string
+	backupDir  string
 	svc        service.Service
 	logger     *zap.Logger
 }
@@ -44,6 +46,7 @@ func NewInstaller(logger *zap.Logger, installDir string) *Installer {
 		latestDir:  path.LatestDir(installDir),
 		svc:        service.NewService(namedLogger, installDir),
 		installDir: installDir,
+		backupDir:  path.BackupDir(installDir),
 		logger:     namedLogger,
 	}
 }
@@ -58,9 +61,14 @@ func (i Installer) Install(rb rollback.ActionAppender) error {
 	rb.AppendAction(action.NewServiceStopAction(i.svc))
 	i.logger.Debug("Service stopped")
 
+	// If JMX jar exists outside of install directory, make sure that gets backed up
+	if err := i.attemptSpecialJMXJarInstall(rb); err != nil {
+		return fmt.Errorf("failed to process special JMX jar: %w", err)
+	}
+
 	// install files that go to installDirPath to their correct location,
 	// excluding any config files (logging.yaml, config.yaml, manager.yaml)
-	if err := installFiles(i.logger, i.latestDir, i.installDir, rb); err != nil {
+	if err := installFiles(i.logger, i.latestDir, i.installDir, i.backupDir, rb); err != nil {
 		return fmt.Errorf("failed to install new files: %w", err)
 	}
 	i.logger.Debug("Install artifacts copied")
@@ -84,7 +92,7 @@ func (i Installer) Install(rb rollback.ActionAppender) error {
 
 // installFiles moves the file tree rooted at inputPath to installDir,
 // skipping configuration files. Appends CopyFileAction-s to the Rollbacker as it copies file.
-func installFiles(logger *zap.Logger, inputPath, installDir string, rb rollback.ActionAppender) error {
+func installFiles(logger *zap.Logger, inputPath, installDir, backupDir string, rb rollback.ActionAppender) error {
 	err := filepath.WalkDir(inputPath, func(inPath string, d fs.DirEntry, err error) error {
 		switch {
 		case err != nil:
@@ -116,7 +124,7 @@ func installFiles(logger *zap.Logger, inputPath, installDir string, rb rollback.
 
 		// We create the action record here, because we want to record whether the file exists or not before
 		// we open the file (which will end up creating the file).
-		cfa, err := action.NewCopyFileAction(logger, relPath, outPath, installDir)
+		cfa, err := action.NewCopyFileAction(logger, relPath, outPath, backupDir)
 		if err != nil {
 			return fmt.Errorf("failed to create copy file action: %w", err)
 		}
@@ -126,7 +134,7 @@ func installFiles(logger *zap.Logger, inputPath, installDir string, rb rollback.
 		// and we will want to roll that back if that is the case.
 		rb.AppendAction(cfa)
 
-		if err := file.CopyFile(logger.Named("copy-file"), inPath, outPath, true); err != nil {
+		if err := file.CopyFile(logger.Named("copy-file"), inPath, outPath, true, false); err != nil {
 			return fmt.Errorf("failed to copy file: %w", err)
 		}
 
@@ -135,6 +143,60 @@ func installFiles(logger *zap.Logger, inputPath, installDir string, rb rollback.
 
 	if err != nil {
 		return fmt.Errorf("failed to walk latest dir: %w", err)
+	}
+
+	return nil
+}
+
+func (i Installer) attemptSpecialJMXJarInstall(rb rollback.ActionAppender) error {
+	jarPath := path.SpecialJMXJarFile(i.installDir)
+	jarDirPath := path.SpecialJarDir(i.installDir)
+	latestJarPath := path.LatestJMXJarFile(i.latestDir)
+	_, err := os.Stat(jarPath)
+	switch {
+	case err == nil:
+		if err := installFile(i.logger, latestJarPath, jarDirPath, i.backupDir, rb); err != nil {
+			return fmt.Errorf("failed to install JMX jar from latest directory: %w", err)
+		}
+		// Just log this error as the worst case is that there will be two jars copied over
+		if err = os.Remove(latestJarPath); err != nil {
+			i.logger.Warn("Failed to remove JMX jar from latest directory", zap.Error(err))
+		}
+	case !errors.Is(err, os.ErrNotExist):
+		return fmt.Errorf("failed determine where currently installed JMX jar is: %w", err)
+	}
+
+	return nil
+}
+
+// installFile moves new file to output path.
+// Appends CopyFileAction-s to the Rollbacker as it copies file.
+func installFile(logger *zap.Logger, inPath, installDirPath, backupDirPath string, rb rollback.ActionAppender) error {
+	baseInPath := filepath.Base(inPath)
+
+	// use the relative path to get the outPath (where we should write the file), and
+	// to get the out directory (which we will create if it does not exist).
+	outPath := filepath.Join(installDirPath, baseInPath)
+	outDir := filepath.Dir(outPath)
+
+	if err := os.MkdirAll(outDir, 0750); err != nil {
+		return fmt.Errorf("failed to create dir: %w", err)
+	}
+
+	// We create the action record here, because we want to record whether the file exists or not before
+	// we open the file (which will end up creating the file).
+	cfa, err := action.NewCopyFileAction(logger, baseInPath, outPath, backupDirPath)
+	if err != nil {
+		return fmt.Errorf("failed to create copy file action: %w", err)
+	}
+
+	// Record that we are performing copying the file.
+	// We record before we actually do the action here because the file may be partially written,
+	// and we will want to roll that back if that is the case.
+	rb.AppendAction(cfa)
+
+	if err := file.CopyFile(logger.Named("copy-file"), inPath, outPath, true, false); err != nil {
+		return fmt.Errorf("failed to copy file: %w", err)
 	}
 
 	return nil

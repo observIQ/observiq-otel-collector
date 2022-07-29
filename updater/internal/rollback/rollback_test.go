@@ -44,9 +44,16 @@ func TestRollbackerBackup(t *testing.T) {
 			logger:      zaptest.NewLogger(t),
 		}
 
-		err := rb.Backup()
+		installJarPath := filepath.Join(rb.installDir, "..", "opentelemetry-java-contrib-jmx-metrics.jar")
+		_, err := os.Create(installJarPath)
+		require.NoError(t, err)
+		err = os.WriteFile(installJarPath, []byte("# The old jar file"), 0660)
 		require.NoError(t, err)
 
+		err = rb.Backup()
+		require.NoError(t, err)
+
+		require.FileExists(t, filepath.Join(outDir, "opentelemetry-java-contrib-jmx-metrics.jar"))
 		require.FileExists(t, filepath.Join(outDir, "some-file.txt"))
 		require.FileExists(t, filepath.Join(outDir, "plugins-dir", "plugin.txt"))
 		require.NoDirExists(t, filepath.Join(outDir, "tmp-dir"))
@@ -78,7 +85,9 @@ func TestRollbackerBackup(t *testing.T) {
 		svc := service_mocks.NewService(t)
 		svc.On("Backup").Return(nil)
 
-		err := os.WriteFile(leftoverFile, []byte("leftover file"), 0600)
+		err := os.MkdirAll(outDir, 0750)
+		require.NoError(t, err)
+		err = os.WriteFile(leftoverFile, []byte("leftover file"), 0600)
 		require.NoError(t, err)
 
 		rb := &Rollbacker{
@@ -91,6 +100,7 @@ func TestRollbackerBackup(t *testing.T) {
 		err = rb.Backup()
 		require.NoError(t, err)
 
+		require.FileExists(t, filepath.Join(outDir, "opentelemetry-java-contrib-jmx-metrics.jar"))
 		require.FileExists(t, filepath.Join(outDir, "some-file.txt"))
 		require.FileExists(t, filepath.Join(outDir, "plugins-dir", "plugin.txt"))
 		require.NoDirExists(t, filepath.Join(outDir, "tmp-dir"))
