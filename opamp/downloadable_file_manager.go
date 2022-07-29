@@ -26,4 +26,6 @@ type DownloadableFileManager interface {
 	// If it matches, the archive is extracted.
 	// If the archive cannot be extracted, downloaded, or verified, then an error is returned.
 	FetchAndExtractArchive(*protobufs.DownloadableFile) error
+	// CleanupArtifacts removes temporary artifacts from previous download/installs
+	CleanupArtifacts()
 }

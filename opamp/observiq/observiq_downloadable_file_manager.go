@@ -160,3 +160,10 @@ func (m DownloadableFileManager) verifyContentHash(contentPath string, expectedF
 
 	return nil
 }
+
+// CleanupArtifacts removes previous installation artifacts by removing the temporary directory.
+func (m DownloadableFileManager) CleanupArtifacts() {
+	if err := os.RemoveAll(m.tmpPath); err != nil {
+		m.logger.Error("Failed to remove temporary directory", zap.Error(err))
+	}
+}
