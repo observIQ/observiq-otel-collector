@@ -432,6 +432,9 @@ func (c *Client) installPackageFromFile(file *protobufs.DownloadableFile, curPac
 	defer c.safeSetUpdatingPackage(false)
 
 	if fileManagerErr := c.downloadableFileManager.FetchAndExtractArchive(file); fileManagerErr != nil {
+		// Remove the update artifacts that may exist, depending on where FetchAndExtractArchive failed.
+		c.downloadableFileManager.CleanupArtifacts()
+
 		// Change existing status to show that install failed and get ready to send
 		curPackageStatuses.Packages[packagestate.CollectorPackageName].Status = protobufs.PackageStatus_InstallFailed
 		curPackageStatuses.Packages[packagestate.CollectorPackageName].ErrorMessage =
@@ -449,6 +452,9 @@ func (c *Client) installPackageFromFile(file *protobufs.DownloadableFile, curPac
 	}
 
 	if monitorErr := c.updaterManager.StartAndMonitorUpdater(); monitorErr != nil {
+		// Remove the update artifacts
+		c.downloadableFileManager.CleanupArtifacts()
+
 		// Reread package statuses in case Updater changed anything
 		newPackageStatuses, err := c.packagesStateProvider.LastReportedStatuses()
 		if err != nil {
@@ -469,8 +475,6 @@ func (c *Client) installPackageFromFile(file *protobufs.DownloadableFile, curPac
 			c.logger.Error("OpAMP client failed to set package statuses", zap.Error(err))
 		}
 	}
-
-	return
 }
 
 func (c *Client) onGetEffectiveConfigHandler(_ context.Context) (*protobufs.EffectiveConfig, error) {

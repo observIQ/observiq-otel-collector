@@ -319,3 +319,31 @@ func TestDownloadAndVerifyInvalidURL(t *testing.T) {
 	err := downloadableFileManager.FetchAndExtractArchive(file)
 	require.ErrorContains(t, err, "failed to determine archive download path:")
 }
+
+func TestCleanupArtifacts(t *testing.T) {
+	t.Run("Cleans up tmp dir if exists", func(t *testing.T) {
+		tmpDir := filepath.Join(t.TempDir(), "tmp")
+
+		// Try to download -- this should create tmpDir, but fail to download
+		downloadableFileManager := newDownloadableFileManager(zap.NewNop(), tmpDir)
+		err := downloadableFileManager.FetchAndExtractArchive(&protobufs.DownloadableFile{
+			DownloadUrl: "http://invalid-host:0/some-file.zip",
+		})
+
+		require.ErrorContains(t, err, "failed to download file")
+		require.DirExists(t, tmpDir)
+
+		downloadableFileManager.CleanupArtifacts()
+		require.NoDirExists(t, tmpDir)
+	})
+
+	t.Run("Does nothing if tmp dir does not exist", func(t *testing.T) {
+		tmpDir := filepath.Join(t.TempDir(), "tmp")
+		downloadableFileManager := newDownloadableFileManager(zap.NewNop(), tmpDir)
+
+		require.NoDirExists(t, tmpDir)
+
+		downloadableFileManager.CleanupArtifacts()
+		require.NoDirExists(t, tmpDir)
+	})
+}
