@@ -25,5 +25,7 @@
     <true/>
     <key>WorkingDirectory</key>
     <string>[INSTALLDIR]</string>
+    <key>ExitTimeOut</key>
+    <integer>20</integer>
 </dict>
 </plist>

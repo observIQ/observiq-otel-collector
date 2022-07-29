@@ -35,10 +35,11 @@ const defaultOthersUpdaterName = "updater"
 
 // othersUpdaterManager handles starting a Updater binary and watching it for failure with a timeout
 type othersUpdaterManager struct {
-	tmpPath     string
-	cwd         string
-	updaterName string
-	logger      *zap.Logger
+	tmpPath             string
+	cwd                 string
+	updaterName         string
+	logger              *zap.Logger
+	shutdownWaitTimeout time.Duration
 }
 
 // newUpdaterManager creates a new UpdaterManager
@@ -49,10 +50,11 @@ func newUpdaterManager(defaultLogger *zap.Logger, tmpPath string) (updaterManage
 	}
 
 	return &othersUpdaterManager{
-		tmpPath:     filepath.Clean(tmpPath),
-		logger:      defaultLogger.Named("updater manager"),
-		updaterName: defaultOthersUpdaterName,
-		cwd:         cwd,
+		tmpPath:             filepath.Clean(tmpPath),
+		logger:              defaultLogger.Named("updater manager"),
+		updaterName:         defaultOthersUpdaterName,
+		cwd:                 cwd,
+		shutdownWaitTimeout: defaultShutdownWaitTimeout,
 	}, nil
 }
 
@@ -79,8 +81,8 @@ func (m othersUpdaterManager) StartAndMonitorUpdater() error {
 		return fmt.Errorf("updater had an issue while starting: %w", err)
 	}
 
-	// See if we're still alive after 5 seconds
-	time.Sleep(5 * time.Second)
+	// See if we're still alive after waiting for the timeout to pass
+	time.Sleep(m.shutdownWaitTimeout)
 
 	// Updater might already be killed
 	if err := cmd.Process.Kill(); err != nil {

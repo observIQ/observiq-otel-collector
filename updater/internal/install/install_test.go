@@ -61,7 +61,6 @@ func TestInstallArtifacts(t *testing.T) {
 		err = os.WriteFile(outDirManager, []byte("# The original manager file"), 0600)
 		require.NoError(t, err)
 
-		svc.On("Stop").Once().Return(nil)
 		svc.On("Update").Once().Return(nil)
 		svc.On("Start").Once().Return(nil)
 
@@ -114,8 +113,7 @@ func TestInstallArtifacts(t *testing.T) {
 		require.NoError(t, err)
 		copyNestedTestTxtAction.FileCreated = true
 
-		require.Equal(t, len(actions), 6)
-		require.Contains(t, actions, action.NewServiceStopAction(svc))
+		require.Equal(t, len(actions), 5)
 		require.Contains(t, actions, copyJarAction)
 		require.Contains(t, actions, copyNestedTestTxtAction)
 		require.Contains(t, actions, copyTestTxtAction)
@@ -162,7 +160,6 @@ func TestInstallArtifacts(t *testing.T) {
 			err = os.WriteFile(outDirManager, []byte("# The original manager file"), 0600)
 			require.NoError(t, err)
 
-			svc.On("Stop").Once().Return(nil)
 			svc.On("Update").Once().Return(nil)
 			svc.On("Start").Once().Return(nil)
 
@@ -215,8 +212,7 @@ func TestInstallArtifacts(t *testing.T) {
 			require.NoError(t, err)
 			copyNestedTestTxtAction.FileCreated = true
 
-			require.Equal(t, len(actions), 6)
-			require.Contains(t, actions, action.NewServiceStopAction(svc))
+			require.Equal(t, len(actions), 5)
 			require.Contains(t, actions, copyJarAction)
 			require.Contains(t, actions, copyNestedTestTxtAction)
 			require.Contains(t, actions, copyTestTxtAction)
@@ -226,23 +222,6 @@ func TestInstallArtifacts(t *testing.T) {
 	} else {
 		t.Skip()
 	}
-
-	t.Run("Stop fails", func(t *testing.T) {
-		outDir := t.TempDir()
-		svc := mocks.NewService(t)
-		rb := rb_mocks.NewActionAppender(t)
-		installer := &Installer{
-			latestDir:  filepath.Join("testdata", "example-install"),
-			installDir: outDir,
-			svc:        svc,
-			logger:     zaptest.NewLogger(t),
-		}
-
-		svc.On("Stop").Once().Return(errors.New("stop failed"))
-
-		err := installer.Install(rb)
-		require.ErrorContains(t, err, "failed to stop service")
-	})
 
 	t.Run("Update fails", func(t *testing.T) {
 		outDir := t.TempDir()
@@ -262,7 +241,6 @@ func TestInstallArtifacts(t *testing.T) {
 		err = os.WriteFile(latestJarPath, []byte("# The new jar file"), 0660)
 		require.NoError(t, err)
 
-		svc.On("Stop").Once().Return(nil)
 		svc.On("Update").Once().Return(errors.New("uninstall failed"))
 
 		actions := []action.RollbackableAction{}
@@ -300,8 +278,7 @@ func TestInstallArtifacts(t *testing.T) {
 		require.NoError(t, err)
 		copyJarAction.FileCreated = true
 
-		require.Equal(t, len(actions), 4)
-		require.Contains(t, actions, action.NewServiceStopAction(svc))
+		require.Equal(t, len(actions), 3)
 		require.Contains(t, actions, copyJarAction)
 		require.Contains(t, actions, copyNestedTestTxtAction)
 		require.Contains(t, actions, copyTestTxtAction)
@@ -325,7 +302,6 @@ func TestInstallArtifacts(t *testing.T) {
 		err = os.WriteFile(latestJarPath, []byte("# The new jar file"), 0660)
 		require.NoError(t, err)
 
-		svc.On("Stop").Once().Return(nil)
 		svc.On("Update").Once().Return(nil)
 		svc.On("Start").Once().Return(errors.New("start failed"))
 
@@ -365,8 +341,7 @@ func TestInstallArtifacts(t *testing.T) {
 		require.NoError(t, err)
 		copyJarAction.FileCreated = true
 
-		require.Equal(t, len(actions), 5)
-		require.Contains(t, actions, action.NewServiceStopAction(svc))
+		require.Equal(t, len(actions), 4)
 		require.Contains(t, actions, copyJarAction)
 		require.Contains(t, actions, copyNestedTestTxtAction)
 		require.Contains(t, actions, copyTestTxtAction)
@@ -384,19 +359,8 @@ func TestInstallArtifacts(t *testing.T) {
 			logger:     zaptest.NewLogger(t),
 		}
 
-		svc.On("Stop").Once().Return(nil)
-
-		actions := []action.RollbackableAction{}
-		rb.On("AppendAction", mock.Anything).Run(func(args mock.Arguments) {
-			action := args.Get(0).(action.RollbackableAction)
-			actions = append(actions, action)
-		})
-
 		err := installer.Install(rb)
 		require.ErrorContains(t, err, "failed to install new files")
-
-		require.Equal(t, len(actions), 1)
-		require.Contains(t, actions, action.NewServiceStopAction(svc))
 	})
 }
 
