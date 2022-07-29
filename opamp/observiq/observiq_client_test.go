@@ -1204,6 +1204,8 @@ func TestClient_onPackagesAvailableHandler(t *testing.T) {
 				mockFileManager.On("FetchAndExtractArchive", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 					wg.Done()
 				})
+				mockFileManager.On("CleanupArtifacts").Return().Times(1)
+
 				mockOpAmpClient := mocks.NewMockOpAMPClient(t)
 				mockOpAmpClient.On("SetPackageStatuses", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
 					status := args.Get(0).(*protobufs.PackageStatuses)
@@ -1347,6 +1349,7 @@ func TestClient_onPackagesAvailableHandler(t *testing.T) {
 
 				mockFileManager := mocks.NewMockDownloadableFileManager(t)
 				mockFileManager.On("FetchAndExtractArchive", mock.Anything).Return(expectedErr)
+				mockFileManager.On("CleanupArtifacts").Return().Times(1)
 				mockProvider := mocks.NewMockPackagesStateProvider(t)
 				mockProvider.On("LastReportedStatuses").Return(packageStatuses, nil)
 				mockProvider.On("SetLastReportedStatuses", mock.Anything).Return(nil)
